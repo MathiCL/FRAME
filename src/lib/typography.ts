@@ -25,6 +25,57 @@ export const CINEMATIC_TEXT_COLORS: ReadonlyArray<{ id: string; label: string; v
   { id: 'sand-gold', label: 'Arena / Dorado', value: '#E2D3B8' },
 ];
 
+/** Curated cinematic background colors */
+export const CINEMATIC_BG_COLORS: ReadonlyArray<{ id: string; label: string; value: string }> = [
+  { id: 'pure-black', label: 'Negro Cine', value: '#000000' },
+  { id: 'carbon', label: 'Carbón', value: '#121215' },
+  { id: 'warm-dark', label: 'Tabaco / Café', value: '#1C1612' },
+  { id: 'navy-night', label: 'Azul Noche', value: '#0B131D' },
+];
+
+/** Converts a hex color (#RGB, #RRGGBB) to an rgba(...) string */
+export function hexToRgba(hex: string, alpha: number): string {
+  let c = hex.replace('#', '').trim();
+  if (c.length === 3) {
+    c = c.split('').map((ch) => ch + ch).join('');
+  }
+  const num = parseInt(c, 16);
+  if (isNaN(num) || (c.length !== 6 && c.length !== 8)) {
+    return `rgba(0, 0, 0, ${alpha.toFixed(3)})`;
+  }
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
+}
+
+/** Draws a rounded rectangle path on Canvas 2D with fallback */
+export function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  if (width <= 0 || height <= 0) return;
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  if (r <= 0) {
+    ctx.rect(x, y, width, height);
+    return;
+  }
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, width, height, r);
+  } else {
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + width, y, x + width, y + height, r);
+    ctx.arcTo(x + width, y + height, x, y + height, r);
+    ctx.arcTo(x, y + height, x, y, r);
+    ctx.arcTo(x, y, x + width, y, r);
+    ctx.closePath();
+  }
+}
+
 export interface TextLine {
   text: string;
   width: number;
@@ -272,6 +323,83 @@ export function renderCinematicText(
   const fontStyle = isQuote ? 'italic' : 'normal';
   const fontWeight = isQuote ? '400' : '600';
   ctx.font = `${fontStyle} ${fontWeight} ${layout.fontSize}px ${fontFamily}`;
+
+  // 0. Draw translucent text background band/pill if enabled
+  if (state.textBackground) {
+    const scale = layout.fontSize / 35;
+    const padX = Math.round((state.textBackgroundPaddingX ?? 16) * scale);
+    const padY = Math.round((state.textBackgroundPaddingY ?? 8) * scale);
+    const radius = Math.round((state.textBackgroundRadius ?? 6) * scale);
+    const bgAlpha = Math.max(15, Math.min(85, state.textBackgroundOpacity ?? 70)) / 100;
+    const bgColor = hexToRgba(state.textBackgroundColor || '#000000', bgAlpha * alpha);
+
+    ctx.save();
+    ctx.fillStyle = bgColor;
+    ctx.shadowColor = 'transparent';
+    ctx.beginPath();
+
+    // Main lines background pills
+    let lineY = layout.startY;
+    for (const line of layout.mainLines) {
+      if (line.text.trim().length > 0 && line.width > 0) {
+        let boxX: number;
+        if (layout.textAlign === 'left') {
+          boxX = layout.startX - padX;
+        } else if (layout.textAlign === 'right') {
+          boxX = layout.startX - line.width - padX;
+        } else {
+          boxX = layout.startX - line.width / 2 - padX;
+        }
+        const boxWidth = line.width + padX * 2;
+        const boxHeight = layout.fontSize + padY * 2;
+        const boxY = lineY - padY;
+
+        const clampedX = Math.max(area.x, boxX);
+        const clampedWidth = Math.min(area.x + area.width - clampedX, boxWidth);
+
+        drawRoundedRect(ctx, clampedX, boxY, clampedWidth, boxHeight, radius);
+      }
+      lineY += layout.lineHeight;
+    }
+
+    // Author lines background pills if present
+    if (layout.authorLines.length > 0) {
+      const authorScale = layout.authorFontSize / 35;
+      const authorPadX = Math.round((state.textBackgroundPaddingX ?? 16) * authorScale);
+      const authorPadY = Math.round((state.textBackgroundPaddingY ?? 8) * authorScale);
+      const authorRadius = Math.round((state.textBackgroundRadius ?? 6) * authorScale);
+      const authorBoxHeight = layout.authorFontSize + authorPadY * 2;
+
+      let authorLineY =
+        layout.startY +
+        layout.mainLines.length * layout.lineHeight +
+        Math.round(layout.fontSize * 0.55);
+
+      for (const line of layout.authorLines) {
+        if (line.text.trim().length > 0 && line.width > 0) {
+          let authorBoxX: number;
+          if (layout.textAlign === 'left') {
+            authorBoxX = layout.startX - authorPadX;
+          } else if (layout.textAlign === 'right') {
+            authorBoxX = layout.startX - line.width - authorPadX;
+          } else {
+            authorBoxX = layout.startX - line.width / 2 - authorPadX;
+          }
+          const authorBoxWidth = line.width + authorPadX * 2;
+          const authorBoxY = authorLineY - authorPadY;
+
+          const clampedX = Math.max(area.x, authorBoxX);
+          const clampedWidth = Math.min(area.x + area.width - clampedX, authorBoxWidth);
+
+          drawRoundedRect(ctx, clampedX, authorBoxY, clampedWidth, authorBoxHeight, authorRadius);
+        }
+        authorLineY += layout.authorLineHeight;
+      }
+    }
+
+    ctx.fill();
+    ctx.restore();
+  }
 
   // 1. Draw outline stroke first if subtitle has shadow/contrast enabled
   if (!isQuote && shadowEnabled) {

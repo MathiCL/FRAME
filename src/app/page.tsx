@@ -1,22 +1,22 @@
 'use client';
 
 import { useState, useRef, useCallback, useMemo, useEffect, useSyncExternalStore } from 'react';
-import { Download, Plus, Film, AlertTriangle, X, Check } from 'lucide-react';
+import { Download, Plus, Film, AlertTriangle, X, Check, Eye } from 'lucide-react';
 import { ImageUploader } from '@/components/ImageUploader';
 import { CinemaCanvas } from '@/components/CinemaCanvas';
 import { Controls } from '@/components/Controls';
 import { loadImage } from '@/utils/image';
-import { EditorState, Preset, PresetValues } from '@/types/editor';
-import { exportCanvasAsImage } from '@/lib/canvas';
+import { EditorState, Preset, TemplateId } from '@/types/editor';
+import { exportCanvasAsImage, renderCinematicFrame } from '@/lib/canvas';
 import { computeFrameLayout, getPanBounds, clampPosition } from '@/lib/geometry';
+import {
+  CINEMATIC_PRESETS,
+  applyPresetIntensity,
+  getPresetDisplayName,
+} from '@/lib/presets';
+import { applyTemplate, getTemplateDisplayName } from '@/lib/templates';
 
 const emptySubscribe = () => () => {};
-
-const PRESETS: Record<Exclude<Preset, 'CUSTOM'>, PresetValues> = {
-  CINEMA: { contrast: 8, saturation: -5, temperature: -2, highlights: -8, grain: 8, vignette: 8 },
-  INDIE: { contrast: 12, saturation: -15, temperature: -5, highlights: -15, grain: 14, vignette: 12 },
-  VINTAGE: { contrast: 5, saturation: -15, temperature: 8, highlights: -5, grain: 20, vignette: 14 },
-};
 
 const INITIAL_STATE: EditorState = {
   image: null,
@@ -33,14 +33,21 @@ const INITIAL_STATE: EditorState = {
   textOpacity: 100,
   textShadow: true,
   showText: true,
+  textBackground: false,
+  textBackgroundColor: '#000000',
+  textBackgroundOpacity: 70,
+  textBackgroundRadius: 6,
+  textBackgroundPaddingX: 16,
+  textBackgroundPaddingY: 8,
   zoom: 1,
   positionX: 0,
   positionY: 0,
-  ...PRESETS.CINEMA,
   format: 'original',
   fitMode: 'fit',
   letterbox: false,
-  preset: 'CINEMA',
+  preset: 'FILM_35MM',
+  presetIntensity: 100,
+  ...CINEMATIC_PRESETS.FILM_35MM.values,
 };
 
 export default function Home() {
@@ -53,7 +60,61 @@ export default function Home() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [isComparing, setIsComparing] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Transient comparison interaction handlers
+  const startComparison = useCallback(() => {
+    if (state.image) {
+      setIsComparing(true);
+    }
+  }, [state.image]);
+
+  const stopComparison = useCallback(() => {
+    setIsComparing(false);
+  }, []);
+
+  // Global safety listener: release comparison on any window-level pointerup, blur, or cancel
+  useEffect(() => {
+    if (!isComparing) return;
+
+    const handleGlobalRelease = () => {
+      setIsComparing(false);
+    };
+
+    window.addEventListener('pointerup', handleGlobalRelease);
+    window.addEventListener('pointercancel', handleGlobalRelease);
+    window.addEventListener('blur', handleGlobalRelease);
+    window.addEventListener('contextmenu', handleGlobalRelease);
+
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalRelease);
+      window.removeEventListener('pointercancel', handleGlobalRelease);
+      window.removeEventListener('blur', handleGlobalRelease);
+      window.removeEventListener('contextmenu', handleGlobalRelease);
+    };
+  }, [isComparing]);
+
+  // Keyboard accessibility: hold Space or Enter on the button to compare
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if ((e.key === ' ' || e.key === 'Enter') && !isComparing && state.image) {
+        e.preventDefault();
+        setIsComparing(true);
+      }
+    },
+    [isComparing, state.image]
+  );
+
+  const handleKeyUp = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        setIsComparing(false);
+      }
+    },
+    []
+  );
 
   const handleImageLoaded = async (file: File) => {
     try {
@@ -67,8 +128,9 @@ export default function Home() {
         format: 'original',
         fitMode: 'fit',
         letterbox: false,
-        preset: 'CINEMA',
-        ...PRESETS.CINEMA,
+        preset: 'FILM_35MM',
+        presetIntensity: 100,
+        ...CINEMATIC_PRESETS.FILM_35MM.values,
       });
     } catch (error) {
       console.error('Error loading image', error);
@@ -98,10 +160,35 @@ export default function Home() {
         updates.grain !== undefined ||
         updates.vignette !== undefined
       ) {
-        if (updates.preset === undefined) {
+        if (updates.preset === undefined && updates.presetIntensity === undefined) {
           merged.preset = 'CUSTOM';
         }
       }
+
+      // If typography/layout changed manually, switch template to CUSTOM unless we are applying a template
+      if (
+        updates.textType !== undefined ||
+        updates.textFont !== undefined ||
+        updates.textAlign !== undefined ||
+        updates.textColor !== undefined ||
+        updates.textSize !== undefined ||
+        updates.textHorizontalPosition !== undefined ||
+        updates.textVerticalPosition !== undefined ||
+        updates.textOpacity !== undefined ||
+        updates.textShadow !== undefined ||
+        updates.showAuthor !== undefined ||
+        updates.textBackground !== undefined ||
+        updates.textBackgroundColor !== undefined ||
+        updates.textBackgroundOpacity !== undefined ||
+        updates.textBackgroundRadius !== undefined ||
+        updates.textBackgroundPaddingX !== undefined ||
+        updates.textBackgroundPaddingY !== undefined
+      ) {
+        if (updates.template === undefined) {
+          merged.template = 'CUSTOM';
+        }
+      }
+
       return merged;
     });
   }, []);
@@ -126,18 +213,73 @@ export default function Home() {
 
   const handlePresetSelect = useCallback((preset: Preset) => {
     if (preset === 'CUSTOM') return;
+    setState((prev) => {
+      const intensity = prev.presetIntensity ?? 100;
+      const values = applyPresetIntensity(CINEMATIC_PRESETS[preset].values, intensity);
+      return {
+        ...prev,
+        ...values,
+        preset,
+      };
+    });
+  }, []);
+
+  const handlePresetIntensityChange = useCallback((intensity: number) => {
+    setState((prev) => {
+      if (prev.preset === 'CUSTOM' || prev.preset === 'ORIGINAL') {
+        return { ...prev, presetIntensity: intensity };
+      }
+      const values = applyPresetIntensity(CINEMATIC_PRESETS[prev.preset].values, intensity);
+      return {
+        ...prev,
+        ...values,
+        presetIntensity: intensity,
+      };
+    });
+  }, []);
+
+  const handleTemplateSelect = useCallback((templateId: TemplateId) => {
+    setState((prev) => {
+      const templateUpdates = applyTemplate(prev, templateId);
+      return {
+        ...prev,
+        ...templateUpdates,
+      };
+    });
+  }, []);
+
+  const handleResetText = useCallback(() => {
     setState((prev) => ({
       ...prev,
-      ...PRESETS[preset],
-      preset,
+      textType: 'subtitle',
+      textFont: 'sans',
+      textAlign: 'center',
+      textColor: '#F4EFE6',
+      textSize: 35,
+      textHorizontalPosition: 50,
+      textVerticalPosition: 84,
+      textOpacity: 100,
+      textShadow: true,
+      showAuthor: true,
+      textBackground: false,
+      textBackgroundColor: '#000000',
+      textBackgroundOpacity: 70,
+      textBackgroundRadius: 6,
+      textBackgroundPaddingX: 16,
+      textBackgroundPaddingY: 8,
+      template: undefined,
     }));
   }, []);
 
   const handleDownload = useCallback(async () => {
-    if (!canvasRef.current || isExporting) return;
+    if (!state.image || isExporting) return;
     setIsExporting(true);
     try {
-      await exportCanvasAsImage(canvasRef.current, 'frame.jpg');
+      // Guarantee that the exported JPG is ALWAYS the fully edited result,
+      // even if the user happens to hold the comparison button during export!
+      const offscreenCanvas = document.createElement('canvas');
+      renderCinematicFrame({ state, canvas: offscreenCanvas, showOriginal: false });
+      await exportCanvasAsImage(offscreenCanvas, 'frame.jpg');
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 2500);
     } catch (error) {
@@ -145,7 +287,7 @@ export default function Home() {
     } finally {
       setIsExporting(false);
     }
-  }, [isExporting]);
+  }, [state, isExporting]);
 
   const handleCanvasReady = useCallback((canvas: HTMLCanvasElement) => {
     canvasRef.current = canvas;
@@ -215,8 +357,23 @@ export default function Home() {
             </span>
             <span className="text-[#3E3C36]">·</span>
             <span className="text-[#D8C7A5]">
-              {state.preset === 'CUSTOM' ? 'Personalizado' : state.preset}
+              {getPresetDisplayName(state.preset)}
+              {state.preset !== 'ORIGINAL' &&
+                state.preset !== 'CUSTOM' &&
+                (state.presetIntensity ?? 100) !== 100 && (
+                  <span className="text-[#9E9C96] text-[10px] ml-1">
+                    ({state.presetIntensity}%)
+                  </span>
+                )}
             </span>
+            {state.template && (
+              <>
+                <span className="text-[#3E3C36]">·</span>
+                <span className="text-[#EAE8E2]">
+                  {getTemplateDisplayName(state.template)}
+                </span>
+              </>
+            )}
             <span className="text-[#3E3C36]">·</span>
             <span className="flex items-center gap-1.5 text-[#686662]">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80 animate-pulse" />
@@ -226,9 +383,39 @@ export default function Home() {
         )}
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-2.5">
           {state.image && (
             <>
+              {/* Botón «Ver original» con soporte ratón, táctil y teclado */}
+              <button
+                type="button"
+                id="btn-ver-original"
+                aria-label="Ver fotografía original (mantener pulsado)"
+                aria-pressed={isComparing}
+                onPointerDown={startComparison}
+                onPointerUp={stopComparison}
+                onPointerCancel={stopComparison}
+                onPointerLeave={stopComparison}
+                onKeyDown={handleKeyDown}
+                onKeyUp={handleKeyUp}
+                onBlur={stopComparison}
+                onContextMenu={(e) => e.preventDefault()}
+                className={`h-9 px-3 sm:px-3.5 text-xs font-medium rounded-md border transition-all flex items-center gap-1.5 sm:gap-2 select-none touch-none cursor-pointer ${
+                  isComparing
+                    ? 'bg-[#D8C7A5] text-[#0A0A0B] border-[#D8C7A5] font-semibold shadow-md ring-2 ring-[#D8C7A5]/40'
+                    : 'bg-[#141417] text-[#EAE8E2] border-[#2B2B32] hover:bg-[#1C1C22] hover:border-[#3D3D46]'
+                }`}
+                title="Mantén pulsado con el ratón, dedo o pulsa Espacio para comparar con la foto original"
+              >
+                <Eye className={`w-3.5 h-3.5 ${isComparing ? 'text-[#0A0A0B]' : 'text-[#D8C7A5]'}`} />
+                <span className="hidden sm:inline tracking-wide">
+                  {isComparing ? 'Viendo original…' : 'Ver original'}
+                </span>
+                <span className="sm:hidden tracking-wide text-[11px]">
+                  {isComparing ? 'Original…' : 'Original'}
+                </span>
+              </button>
+
               {/* Nueva Imagen */}
               <button
                 type="button"
@@ -291,17 +478,50 @@ export default function Home() {
                   boxShadow: '0 0 0 1px #232328, 0 25px 50px -12px rgba(0,0,0,0.7)',
                 }}
               >
+                {/* Active Comparison Badge Overlay */}
+                {isComparing && (
+                  <div className="absolute top-3 left-3 z-20 pointer-events-none flex items-center gap-2 px-2.5 py-1 rounded bg-black/85 backdrop-blur-md border border-amber-500/40 text-amber-200 font-mono text-[10px] sm:text-[11px] uppercase tracking-wider shadow-lg animate-in fade-in duration-100">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span>Original (sin procesar)</span>
+                  </div>
+                )}
+
                 <CinemaCanvas
                   state={state}
+                  showOriginal={isComparing}
                   onCanvasReady={handleCanvasReady}
                   onPanChange={handlePanChange}
                   className="block w-full h-full"
                 />
               </div>
 
-              {/* Subtle interaction tip below canvas */}
-              <div className="mt-3 hidden sm:flex items-center gap-1.5 text-[10px] text-[#52504C] font-mono">
-                <span>💡 Arrastra con el ratón o desliza sobre el lienzo para reencuadrar</span>
+              {/* Interaction tip & tactile comparison button below canvas */}
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 w-full max-w-xl px-2">
+                <span className="text-[10px] text-[#52504C] font-mono hidden sm:inline">
+                  💡 Arrastra con el ratón o desliza sobre el lienzo para reencuadrar
+                </span>
+                <button
+                  type="button"
+                  aria-label="Ver fotografía original (mantener pulsado)"
+                  aria-pressed={isComparing}
+                  onPointerDown={startComparison}
+                  onPointerUp={stopComparison}
+                  onPointerCancel={stopComparison}
+                  onPointerLeave={stopComparison}
+                  onKeyDown={handleKeyDown}
+                  onKeyUp={handleKeyUp}
+                  onBlur={stopComparison}
+                  onContextMenu={(e) => e.preventDefault()}
+                  className={`text-[11px] font-mono px-3 py-1.5 rounded-md border transition-all flex items-center gap-1.5 select-none touch-none cursor-pointer sm:ml-auto ${
+                    isComparing
+                      ? 'bg-[#D8C7A5] text-[#0A0A0B] border-[#D8C7A5] font-semibold shadow-sm'
+                      : 'bg-[#121215] text-[#9E9C96] border-[#232328] hover:text-[#EAE8E2] hover:border-[#383842]'
+                  }`}
+                  title="Mantén pulsado con el ratón, dedo o pulsa Espacio para comparar con la foto original"
+                >
+                  <Eye className={`w-3.5 h-3.5 ${isComparing ? 'text-[#0A0A0B]' : 'text-[#D8C7A5]'}`} />
+                  <span>{isComparing ? 'Soltar para volver a edición' : 'Mantener pulsado para ver original'}</span>
+                </button>
               </div>
             </div>
 
@@ -315,9 +535,12 @@ export default function Home() {
                 onChange={handleStateChange}
                 onDownload={handleDownload}
                 onPresetSelect={handlePresetSelect}
+                onPresetIntensityChange={handlePresetIntensityChange}
+                onTemplateSelect={handleTemplateSelect}
                 onReset={() => setState({ ...INITIAL_STATE, image: state.image })}
                 onResetFraming={handleResetFraming}
-                onResetColor={() => handlePresetSelect('CINEMA')}
+                onResetColor={() => handlePresetSelect('ORIGINAL')}
+                onResetText={handleResetText}
               />
             </aside>
           </>

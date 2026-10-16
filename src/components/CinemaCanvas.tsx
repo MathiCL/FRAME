@@ -10,6 +10,7 @@ import {
 
 interface CinemaCanvasProps {
   state: EditorState;
+  showOriginal?: boolean;
   className?: string;
   onCanvasReady?: (canvas: HTMLCanvasElement) => void;
   onPanChange?: (positionX: number, positionY: number) => void;
@@ -17,6 +18,7 @@ interface CinemaCanvasProps {
 
 export function CinemaCanvas({
   state,
+  showOriginal = false,
   className = '',
   onCanvasReady,
   onPanChange,
@@ -37,17 +39,17 @@ export function CinemaCanvas({
     const canvas = canvasRef.current;
     if (!canvas || !state.image) return;
 
-    renderCinematicFrame({ state, canvas });
+    renderCinematicFrame({ state, canvas, showOriginal });
 
     if (onCanvasReady) {
       onCanvasReady(canvas);
     }
-  }, [state, onCanvasReady]);
+  }, [state, showOriginal, onCanvasReady]);
 
   // --- INTERACTIVE POINTER PANNING ---
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (!onPanChange || !state.image) return;
+      if (!onPanChange || !state.image || showOriginal) return;
 
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -74,7 +76,7 @@ export function CinemaCanvas({
         bounds,
       };
     },
-    [onPanChange, state.image, state.format, state.letterbox, state.fitMode, state.zoom, state.positionX, state.positionY]
+    [onPanChange, state.image, state.format, state.letterbox, state.fitMode, state.zoom, state.positionX, state.positionY, showOriginal]
   );
 
   const handlePointerMove = useCallback(

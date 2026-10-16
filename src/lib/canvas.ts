@@ -5,6 +5,7 @@ import { renderCinematicText } from '@/lib/typography';
 interface RenderOptions {
   state: EditorState;
   canvas: HTMLCanvasElement;
+  showOriginal?: boolean;
 }
 
 // Generate a deterministic noise pattern once to reuse
@@ -42,7 +43,7 @@ function getNoisePattern(): HTMLCanvasElement {
   return canvas;
 }
 
-export function renderCinematicFrame({ state, canvas }: RenderOptions) {
+export function renderCinematicFrame({ state, canvas, showOriginal = false }: RenderOptions) {
   const img = state.image;
   if (!img) return;
 
@@ -80,6 +81,16 @@ export function renderCinematicFrame({ state, canvas }: RenderOptions) {
   ctx.beginPath();
   ctx.rect(area.x, area.y, area.width, area.height);
   ctx.clip();
+
+  // --- TRANSIENT COMPARISON MODE: PURE ORIGINAL PHOTO ---
+  // When comparing, render the raw photograph using the exact same framing geometry,
+  // without contrast, saturation, temperature, highlights, grain, vignette, or typography.
+  if (showOriginal) {
+    ctx.filter = 'none';
+    ctx.drawImage(img, imageRect.x, imageRect.y, imageRect.width, imageRect.height);
+    ctx.restore();
+    return;
+  }
 
   // --- 1. BASE IMAGE DRAW WITH CONTRAST & SATURATION ---
   const contrast = 100 + state.contrast;

@@ -38,6 +38,14 @@ export interface EditorState {
   textShadow: boolean;
   showText: boolean;
 
+  // --- Text Background (Banda translúcida) ---
+  textBackground?: boolean;
+  textBackgroundColor?: string;
+  textBackgroundOpacity?: number; // 15..85 %
+  textBackgroundRadius?: number;  // Corner radius in px
+  textBackgroundPaddingX?: number; // Horizontal padding in px
+  textBackgroundPaddingY?: number; // Vertical padding in px
+
   // --- Image Framing & Geometry ---
   zoom: number;
   positionX: number;
@@ -54,9 +62,52 @@ export interface EditorState {
   grain: number;
   vignette: number;
   preset: Preset;
+  presetIntensity?: number; // 0..100
+
+  // --- Composition Templates ---
+  template?: TemplateId;
 }
 
-export type Preset = 'CINEMA' | 'INDIE' | 'VINTAGE' | 'CUSTOM';
+export type TemplateId =
+  | 'THE_QUOTE'
+  | 'THE_SUBTITLE'
+  | 'THE_OPENING'
+  | 'THE_DIARY'
+  | 'THE_MINIMAL'
+  | 'CUSTOM';
+
+/** Typography and layout values a composition template controls */
+export type TemplateValues = Pick<
+  EditorState,
+  | 'textType'
+  | 'textFont'
+  | 'textAlign'
+  | 'textColor'
+  | 'textSize'
+  | 'textHorizontalPosition'
+  | 'textVerticalPosition'
+  | 'textOpacity'
+  | 'textShadow'
+  | 'showAuthor'
+  | 'textBackground'
+  | 'textBackgroundColor'
+  | 'textBackgroundOpacity'
+  | 'textBackgroundRadius'
+  | 'textBackgroundPaddingX'
+  | 'textBackgroundPaddingY'
+>;
+
+export type Preset =
+  | 'ORIGINAL'
+  | 'FILM_35MM'
+  | 'GOLDEN_HOUR'
+  | 'BLUE_HOUR'
+  | 'NOIR'
+  | 'DREAMY'
+  | 'INDIE'
+  | 'CINEMA'
+  | 'VINTAGE'
+  | 'CUSTOM';
 
 /** Values a preset controls. */
 export type PresetValues = Pick<

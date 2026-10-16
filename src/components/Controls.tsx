@@ -14,6 +14,7 @@ import {
 import { 
   EditorState, 
   Preset, 
+  TemplateId,
   FitMode, 
   TextType, 
   TextFont, 
@@ -21,28 +22,79 @@ import {
   AspectFormat 
 } from '@/types/editor';
 import { ASPECT_FORMATS, computeFrameLayout, getPanBounds } from '@/lib/geometry';
-import { FONT_STACKS, CINEMATIC_TEXT_COLORS } from '@/lib/typography';
+import { FONT_STACKS, CINEMATIC_TEXT_COLORS, CINEMATIC_BG_COLORS } from '@/lib/typography';
+import { PRESET_GALLERY_LIST, getPresetDisplayName } from '@/lib/presets';
+import { TEMPLATES_GALLERY_LIST, getTemplateDisplayName, applyTemplate } from '@/lib/templates';
 
 interface ControlsProps {
   state: EditorState;
   onChange: (updates: Partial<EditorState>) => void;
   onDownload: () => void;
   onPresetSelect: (preset: Preset) => void;
+  onPresetIntensityChange?: (intensity: number) => void;
+  onTemplateSelect?: (templateId: TemplateId) => void;
   onReset: () => void;
   onResetFraming?: () => void;
   onResetColor?: () => void;
+  onResetText?: () => void;
 }
 
 type TabKey = 'encuadre' | 'color' | 'textura' | 'texto';
+
+function TemplateThumbnail({ id }: { id: TemplateId }) {
+  switch (id) {
+    case 'THE_QUOTE':
+      return (
+        <svg className="w-full h-full p-1.5" viewBox="0 0 100 40" fill="none">
+          <line x1="18" y1="13" x2="82" y2="13" stroke="#F4EFE6" strokeWidth="2.2" strokeLinecap="round" />
+          <line x1="26" y1="20" x2="74" y2="20" stroke="#F4EFE6" strokeWidth="2.2" strokeLinecap="round" />
+          <line x1="38" y1="27" x2="62" y2="27" stroke="#D8C7A5" strokeWidth="1.2" strokeLinecap="round" strokeDasharray="3 2" />
+        </svg>
+      );
+    case 'THE_SUBTITLE':
+      return (
+        <svg className="w-full h-full p-1.5" viewBox="0 0 100 40" fill="none">
+          <rect x="14" y="22" width="72" height="12" rx="3" fill="#1C1C22" stroke="#383844" strokeWidth="0.8" />
+          <line x1="22" y1="28" x2="78" y2="28" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+    case 'THE_OPENING':
+      return (
+        <svg className="w-full h-full p-1.5" viewBox="0 0 100 40" fill="none">
+          <line x1="14" y1="16" x2="86" y2="16" stroke="#F4EFE6" strokeWidth="3.6" strokeLinecap="round" />
+          <line x1="32" y1="25" x2="68" y2="25" stroke="#9E9C96" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      );
+    case 'THE_DIARY':
+      return (
+        <svg className="w-full h-full p-1.5" viewBox="0 0 100 40" fill="none">
+          <line x1="10" y1="18" x2="48" y2="18" stroke="#E2D3B8" strokeWidth="1.8" strokeLinecap="round" />
+          <line x1="10" y1="24" x2="64" y2="24" stroke="#E2D3B8" strokeWidth="1.8" strokeLinecap="round" />
+          <line x1="10" y1="30" x2="36" y2="30" stroke="#85837E" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      );
+    case 'THE_MINIMAL':
+      return (
+        <svg className="w-full h-full p-1.5" viewBox="0 0 100 40" fill="none">
+          <line x1="38" y1="32" x2="62" y2="32" stroke="#FFFFFF" strokeWidth="1.4" strokeLinecap="round" strokeOpacity="0.85" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
 
 export function Controls({
   state,
   onChange,
   onDownload,
   onPresetSelect,
+  onPresetIntensityChange,
+  onTemplateSelect,
   onReset,
   onResetFraming,
   onResetColor,
+  onResetText,
 }: ControlsProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('encuadre');
 
@@ -322,42 +374,114 @@ export function Controls({
             aria-labelledby="tab-color" 
             className="flex flex-col gap-6"
           >
-            {/* Cinematic Presets */}
+            {/* Cinematic Presets Gallery */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-[#9E9C96]">
-                  Estilos Cinematográficos
-                </span>
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#9E9C96] block">
+                    Estilos Cinematográficos
+                  </span>
+                  <span className="text-[10px] text-[#686662]">
+                    Gradación de color y atmósfera analógica
+                  </span>
+                </div>
                 {state.preset === 'CUSTOM' ? (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#202026] text-[#D8C7A5] font-mono border border-[#2E2E38]">
                     Personalizado
                   </span>
                 ) : (
-                  <span className="text-[10px] text-[#686662] font-mono">Preset activo</span>
+                  <span className="text-[10px] text-[#D8C7A5] font-mono">
+                    {getPresetDisplayName(state.preset)}
+                  </span>
                 )}
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                {(['CINEMA', 'INDIE', 'VINTAGE'] as Preset[]).map((preset) => {
-                  const isSelected = state.preset === preset;
+              {/* Gallery Grid */}
+              <div 
+                role="radiogroup" 
+                aria-label="Seleccionar estilo cinematográfico"
+                className="grid grid-cols-2 gap-2"
+              >
+                {PRESET_GALLERY_LIST.map((presetItem) => {
+                  const isSelected = state.preset === presetItem.id;
                   return (
                     <button
-                      key={preset}
+                      key={presetItem.id}
                       type="button"
-                      onClick={() => onPresetSelect(preset)}
-                      className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-md border text-center transition-all cursor-pointer ${
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => onPresetSelect(presetItem.id)}
+                      className={`group relative flex flex-col p-2 rounded-lg border text-left transition-all cursor-pointer ${
                         isSelected
-                          ? 'bg-[#EAE8E2] text-[#0A0A0B] border-[#EAE8E2] font-semibold shadow-sm'
-                          : 'bg-[#141417] text-[#9E9C96] border-[#232328] hover:text-[#EAE8E2] hover:border-[#35353C]'
+                          ? 'bg-[#18181D] border-[#D8C7A5] shadow-[0_0_12px_rgba(216,199,165,0.12)] ring-1 ring-[#D8C7A5]/60'
+                          : 'bg-[#121215] border-[#232328] hover:border-[#383842] hover:bg-[#151518]'
                       }`}
                     >
-                      <span className="text-[11px] tracking-wide">{preset}</span>
-                      <span className={`text-[9px] mt-0.5 ${isSelected ? 'text-[#3E3C36]' : 'text-[#686662]'}`}>
-                        {preset === 'CINEMA' ? 'Neutro profundo' : preset === 'INDIE' ? 'Sombras frías' : 'Cálido analógico'}
-                      </span>
+                      {/* Swatch gradient header */}
+                      <div 
+                        className="w-full h-7 rounded mb-1.5 flex items-center justify-end px-1.5 shadow-inner relative overflow-hidden"
+                        style={{ background: presetItem.gradient }}
+                      >
+                        {isSelected && (
+                          <div className="w-3.5 h-3.5 rounded-full bg-[#0A0A0B]/80 text-[#D8C7A5] flex items-center justify-center">
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-0.5">
+                        <p className={`text-xs font-semibold tracking-wide ${isSelected ? 'text-[#EAE8E2]' : 'text-[#CCCCCC] group-hover:text-[#EAE8E2]'}`}>
+                          {presetItem.name}
+                        </p>
+                        <p className="text-[10px] text-[#85837E] leading-tight line-clamp-1">
+                          {presetItem.subtitle}
+                        </p>
+                      </div>
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Global Intensity Slider */}
+            <div className="space-y-2 pt-3 border-t border-[#1F1F24]">
+              <div className="flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-[#9E9C96] font-medium block">Intensidad del estilo</span>
+                  <span className="text-[10px] text-[#686662]">
+                    {state.preset === 'ORIGINAL'
+                      ? 'Sin procesado activo'
+                      : state.preset === 'CUSTOM'
+                      ? 'Ajustes manuales en curso'
+                      : `Gradúa el efecto de ${getPresetDisplayName(state.preset)}`}
+                  </span>
+                </div>
+                <span className="font-mono text-[#D8C7A5] text-xs">
+                  {state.preset === 'ORIGINAL' ? '0%' : `${state.presetIntensity ?? 100}%`}
+                </span>
+              </div>
+              <input
+                type="range"
+                aria-label="Intensidad del estilo cinematográfico"
+                min="0"
+                max="100"
+                step="1"
+                disabled={state.preset === 'ORIGINAL'}
+                value={state.preset === 'ORIGINAL' ? 0 : (state.presetIntensity ?? 100)}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (onPresetIntensityChange) {
+                    onPresetIntensityChange(val);
+                  } else {
+                    onChange({ presetIntensity: val });
+                  }
+                }}
+                className="w-full"
+              />
+              <div className="flex justify-between text-[10px] text-[#686662] font-mono">
+                <span>0% Neutro</span>
+                <span>50% Sutil</span>
+                <span>100% Pleno</span>
               </div>
             </div>
 
@@ -401,15 +525,15 @@ export function Controls({
                 <input
                   type="range"
                   aria-label="Saturación"
-                  min="-50"
+                  min="-100"
                   max="30"
                   value={state.saturation ?? 0}
                   onChange={(e) => onChange({ saturation: Number(e.target.value) })}
                   className="w-full"
                 />
                 <div className="flex justify-between text-[10px] text-[#686662] font-mono">
-                  <span>-50 Desaturado</span>
-                  <span>+30 Intenso</span>
+                  <span>-100% Monocromo</span>
+                  <span>+30% Vívido</span>
                 </div>
               </div>
 
@@ -460,15 +584,15 @@ export function Controls({
               </div>
             </div>
 
-            {/* Reset color to preset */}
+            {/* Reset color to original preset */}
             <div className="pt-2">
               <button
                 type="button"
-                onClick={onResetColor ?? (() => onPresetSelect('CINEMA'))}
+                onClick={onResetColor ?? (() => onPresetSelect('ORIGINAL'))}
                 className="w-full py-2 px-3 rounded-md border border-[#232328] bg-[#121215] text-[#9E9C96] hover:text-[#EAE8E2] hover:border-[#35353C] text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                Restablecer a Cinema
+                Restablecer a Original (sin preset)
               </button>
             </div>
           </div>
@@ -579,6 +703,83 @@ export function Controls({
 
             {(state.showText ?? true) ? (
               <>
+                {/* Composition Templates Gallery */}
+                <div className="space-y-3 pb-3 border-b border-[#1F1F24]">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-[#9E9C96] block">
+                        Plantillas de Composición
+                      </span>
+                      <span className="text-[10px] text-[#686662]">
+                        Puntos de partida tipográficos y espaciales
+                      </span>
+                    </div>
+                    {state.template === 'CUSTOM' ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#202026] text-[#D8C7A5] font-mono border border-[#2E2E38]">
+                        Personalizado
+                      </span>
+                    ) : state.template ? (
+                      <span className="text-[10px] text-[#D8C7A5] font-mono">
+                        {getTemplateDisplayName(state.template)}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/* Templates Grid */}
+                  <div 
+                    role="radiogroup" 
+                    aria-label="Seleccionar plantilla de composición"
+                    className="grid grid-cols-2 gap-2"
+                  >
+                    {TEMPLATES_GALLERY_LIST.map((templateItem) => {
+                      const isSelected = state.template === templateItem.id;
+                      return (
+                        <button
+                          key={templateItem.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={isSelected}
+                          onClick={() => {
+                            if (onTemplateSelect) {
+                              onTemplateSelect(templateItem.id);
+                            } else {
+                              const updates = applyTemplate(state, templateItem.id);
+                              onChange(updates);
+                            }
+                          }}
+                          className={`group relative flex flex-col p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#18181D] border-[#D8C7A5] shadow-[0_0_12px_rgba(216,199,165,0.12)] ring-1 ring-[#D8C7A5]/60'
+                              : 'bg-[#121215] border-[#232328] hover:border-[#383842] hover:bg-[#151518]'
+                          }`}
+                        >
+                          {/* Mini visual frame thumbnail */}
+                          <div className="w-full h-9 rounded bg-[#0A0A0B] border border-[#202025] mb-1.5 flex items-center justify-center relative overflow-hidden shadow-inner">
+                            <TemplateThumbnail id={templateItem.id} />
+                            {isSelected && (
+                              <div className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-[#D8C7A5] text-[#0A0A0B] flex items-center justify-center">
+                                <Check className="w-2.5 h-2.5 stroke-[3]" />
+                              </div>
+                            )}
+                            <span className="absolute bottom-1 left-1.5 text-[8px] font-mono tracking-wider uppercase px-1 py-0.2 rounded bg-black/70 text-[#9E9C96] border border-[#26262C]">
+                              {templateItem.badge}
+                            </span>
+                          </div>
+
+                          <div className="space-y-0.5">
+                            <p className={`text-xs font-semibold tracking-wide ${isSelected ? 'text-[#EAE8E2]' : 'text-[#CCCCCC] group-hover:text-[#EAE8E2]'}`}>
+                              {templateItem.name}
+                            </p>
+                            <p className="text-[10px] text-[#85837E] leading-tight line-clamp-1">
+                              {templateItem.subtitle}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Text Type (Quote vs Subtitle) */}
                 <div className="space-y-2">
                   <span className="text-xs text-[#9E9C96] font-medium">Modo Tipográfico</span>
@@ -757,6 +958,176 @@ export function Controls({
                   </div>
                 </div>
 
+                {/* Fondo del texto (Banda translúcida) */}
+                <div className="space-y-4 pt-3 border-t border-[#1F1F24]">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-[#9E9C96] block">
+                        Fondo del texto
+                      </span>
+                      <span className="text-[10px] text-[#686662]">
+                        Banda translúcida adaptada a cada línea
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={state.textBackground ?? false}
+                      onClick={() => onChange({ textBackground: !(state.textBackground ?? false) })}
+                      className={`h-7 px-3 rounded-md border text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                        (state.textBackground ?? false)
+                          ? 'bg-[#18181D] border-[#D8C7A5]/70 text-[#EAE8E2]'
+                          : 'bg-[#121215] border-[#232328] text-[#9E9C96] hover:text-[#EAE8E2]'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${
+                        (state.textBackground ?? false) ? 'bg-[#D8C7A5]' : 'bg-[#404048]'
+                      }`} />
+                      <span>{(state.textBackground ?? false) ? 'Activado' : 'Desactivado'}</span>
+                    </button>
+                  </div>
+
+                  {(state.textBackground ?? false) && (
+                    <div className="space-y-4 pt-1">
+                      {/* Color Palette for Background */}
+                      <div className="space-y-1.5">
+                        <span className="text-xs text-[#9E9C96]">Color de fondo</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {CINEMATIC_BG_COLORS.map((bgCol) => {
+                            const isSelected = (state.textBackgroundColor ?? '#000000') === bgCol.value;
+                            return (
+                              <button
+                                key={bgCol.id}
+                                type="button"
+                                onClick={() => onChange({ textBackgroundColor: bgCol.value })}
+                                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-[#212128] border-[#D8C7A5] text-[#EAE8E2]'
+                                    : 'bg-[#141417] border-[#232328] text-[#9E9C96] hover:text-[#EAE8E2]'
+                                }`}
+                              >
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full ring-1 ring-white/20"
+                                  style={{ backgroundColor: bgCol.value }}
+                                />
+                                <span className="text-[11px]">{bgCol.label}</span>
+                              </button>
+                            );
+                          })}
+
+                          {/* Custom Color Input */}
+                          <label 
+                            title="Color personalizado"
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#232328] bg-[#141417] text-[#9E9C96] hover:text-[#EAE8E2] text-[11px] cursor-pointer"
+                          >
+                            <input
+                              type="color"
+                              value={state.textBackgroundColor ?? '#000000'}
+                              onChange={(e) => onChange({ textBackgroundColor: e.target.value })}
+                              className="w-3.5 h-3.5 rounded bg-transparent border-0 cursor-pointer p-0"
+                            />
+                            <span>Personalizado</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Opacity Slider (15% to 85%) */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-[#9E9C96]">Opacidad del fondo</span>
+                          <span className="font-mono text-[#D8C7A5]">
+                            {state.textBackgroundOpacity ?? 70}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          aria-label="Opacidad del fondo"
+                          min="15"
+                          max="85"
+                          step="1"
+                          value={state.textBackgroundOpacity ?? 70}
+                          onChange={(e) => onChange({ textBackgroundOpacity: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="flex justify-between text-[10px] text-[#686662] font-mono">
+                          <span>15% Sutil</span>
+                          <span>70% Predeterminado</span>
+                          <span>85% Denso</span>
+                        </div>
+                      </div>
+
+                      {/* Corner Radius Slider (0 to 20 px) */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-[#9E9C96]">Radio de esquinas</span>
+                          <span className="font-mono text-[#D8C7A5]">
+                            {state.textBackgroundRadius ?? 6} px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          aria-label="Radio de esquinas"
+                          min="0"
+                          max="20"
+                          step="1"
+                          value={state.textBackgroundRadius ?? 6}
+                          onChange={(e) => onChange({ textBackgroundRadius: Number(e.target.value) })}
+                          className="w-full"
+                        />
+                        <div className="flex justify-between text-[10px] text-[#686662] font-mono">
+                          <span>0 px Recto</span>
+                          <span>6 px Suave</span>
+                          <span>20 px Redondeado</span>
+                        </div>
+                      </div>
+
+                      {/* Horizontal & Vertical Padding in a 2-column grid */}
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* Horizontal Padding */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-[#9E9C96]">Espaciado H</span>
+                            <span className="font-mono text-[#D8C7A5]">
+                              {state.textBackgroundPaddingX ?? 16} px
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            aria-label="Espaciado horizontal del fondo"
+                            min="4"
+                            max="40"
+                            step="1"
+                            value={state.textBackgroundPaddingX ?? 16}
+                            onChange={(e) => onChange({ textBackgroundPaddingX: Number(e.target.value) })}
+                            className="w-full"
+                          />
+                        </div>
+
+                        {/* Vertical Padding */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-[#9E9C96]">Espaciado V</span>
+                            <span className="font-mono text-[#D8C7A5]">
+                              {state.textBackgroundPaddingY ?? 8} px
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            aria-label="Espaciado vertical del fondo"
+                            min="2"
+                            max="24"
+                            step="1"
+                            value={state.textBackgroundPaddingY ?? 8}
+                            onChange={(e) => onChange({ textBackgroundPaddingY: Number(e.target.value) })}
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Sizing & Safe Margin Sliders */}
                 <div className="space-y-4 pt-2 border-t border-[#1F1F24]">
                   {/* Size */}
@@ -812,6 +1183,33 @@ export function Controls({
                       className="w-full"
                     />
                   </div>
+                </div>
+
+                {/* Reset Typography Button */}
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={onResetText ?? (() => {
+                      onChange({
+                        textType: 'subtitle',
+                        textFont: 'sans',
+                        textAlign: 'center',
+                        textColor: '#F4EFE6',
+                        textSize: 35,
+                        textHorizontalPosition: 50,
+                        textVerticalPosition: 84,
+                        textOpacity: 100,
+                        textShadow: true,
+                        showAuthor: true,
+                        textBackground: false,
+                        template: undefined,
+                      });
+                    })}
+                    className="w-full py-2 px-3 rounded-md border border-[#232328] bg-[#121215] text-[#9E9C96] hover:text-[#EAE8E2] hover:border-[#35353C] text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Restablecer tipografía a inicial
+                  </button>
                 </div>
               </>
             ) : (
