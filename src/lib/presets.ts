@@ -115,6 +115,23 @@ export const CINEMATIC_PRESETS: Record<Exclude<Preset, 'CUSTOM'>, PresetDefiniti
       vignette: 14,
     },
   },
+  AFTER_HOURS: {
+    id: 'AFTER_HOURS',
+    name: 'After Hours',
+    subtitle: 'Noche íntima',
+    description: 'Sombras profundas, negros densos, iluminación cálida localizada y viñeta suave.',
+    gradient: 'linear-gradient(135deg, #7E4B1C 0%, #1F1108 45%, #08070A 100%)',
+    values: {
+      exposure: -14,
+      contrast: 22,
+      saturation: -18,
+      temperature: 12,
+      highlights: 6,
+      shadows: -32,
+      grain: 6,
+      vignette: 34,
+    },
+  },
   // Backward-compatibility aliases for legacy preset keys
   CINEMA: {
     id: 'CINEMA',
@@ -152,6 +169,7 @@ export const CINEMATIC_PRESETS: Record<Exclude<Preset, 'CUSTOM'>, PresetDefiniti
 export const PRESET_GALLERY_LIST: PresetDefinition[] = [
   CINEMATIC_PRESETS.ORIGINAL,
   CINEMATIC_PRESETS.FILM_35MM,
+  CINEMATIC_PRESETS.AFTER_HOURS,
   CINEMATIC_PRESETS.GOLDEN_HOUR,
   CINEMATIC_PRESETS.BLUE_HOUR,
   CINEMATIC_PRESETS.NOIR,
@@ -169,10 +187,12 @@ export function applyPresetIntensity(
 ): PresetValues {
   const factor = Math.max(0, Math.min(100, intensity)) / 100;
   return {
+    exposure: Math.round((baseValues.exposure ?? 0) * factor),
     contrast: Math.round(baseValues.contrast * factor),
     saturation: Math.round(baseValues.saturation * factor),
     temperature: Math.round(baseValues.temperature * factor),
     highlights: Math.round(baseValues.highlights * factor),
+    shadows: Math.round((baseValues.shadows ?? 0) * factor),
     grain: Math.round(baseValues.grain * factor),
     vignette: Math.round(baseValues.vignette * factor),
   };

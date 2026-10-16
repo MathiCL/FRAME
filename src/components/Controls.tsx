@@ -26,7 +26,7 @@ import { FONT_STACKS, CINEMATIC_TEXT_COLORS, CINEMATIC_BG_COLORS } from '@/lib/t
 import { PRESET_GALLERY_LIST, getPresetDisplayName } from '@/lib/presets';
 import { TEMPLATES_GALLERY_LIST, getTemplateDisplayName, applyTemplate } from '@/lib/templates';
 
-interface ControlsProps {
+export interface ControlsProps {
   state: EditorState;
   onChange: (updates: Partial<EditorState>) => void;
   onDownload: () => void;
@@ -37,9 +37,13 @@ interface ControlsProps {
   onResetFraming?: () => void;
   onResetColor?: () => void;
   onResetText?: () => void;
+  activeTab?: TabKey;
+  onTabChange?: (tab: TabKey) => void;
+  hideTabsHeader?: boolean;
+  hideFooterActions?: boolean;
 }
 
-type TabKey = 'encuadre' | 'color' | 'textura' | 'texto';
+export type TabKey = 'encuadre' | 'color' | 'textura' | 'texto';
 
 function TemplateThumbnail({ id }: { id: TemplateId }) {
   switch (id) {
@@ -95,8 +99,14 @@ export function Controls({
   onResetFraming,
   onResetColor,
   onResetText,
+  activeTab: activeTabProp,
+  onTabChange: onTabChangeProp,
+  hideTabsHeader = false,
+  hideFooterActions = false,
 }: ControlsProps) {
-  const [activeTab, setActiveTab] = useState<TabKey>('encuadre');
+  const [internalTab, setInternalTab] = useState<TabKey>('encuadre');
+  const activeTab = activeTabProp ?? internalTab;
+  const setActiveTab = onTabChangeProp ?? setInternalTab;
 
   // Compute boundaries for interactive pan and zoom sliders
   const layout = state.image ? computeFrameLayout(state.format, state.image, state.letterbox) : null;
@@ -120,42 +130,44 @@ export function Controls({
   return (
     <div className="w-full flex flex-col h-full bg-[#0E0E10] text-[#EAE8E2] select-none">
       
-      {/* 4 MODULAR TABS HEADER */}
-      <div 
-        role="tablist" 
-        aria-label="Pestañas de edición cinematográfica"
-        className="grid grid-cols-4 border-b border-[#232328] bg-[#121215] shrink-0"
-      >
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              role="tab"
-              id={`tab-${tab.id}`}
-              aria-selected={isActive}
-              aria-controls={`panel-${tab.id}`}
-              tabIndex={isActive ? 0 : -1}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 py-3 px-2 text-xs font-medium tracking-wide transition-all relative cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#D8C7A5] ${
-                isActive
-                  ? 'text-[#EAE8E2] bg-[#17171B]'
-                  : 'text-[#9E9C96] hover:text-[#EAE8E2] hover:bg-[#151518]'
-              }`}
-            >
-              <Icon className={`w-3.5 h-3.5 transition-colors ${isActive ? 'text-[#D8C7A5]' : 'text-[#686662]'}`} />
-              <span className="text-[11px] sm:text-xs">{tab.label}</span>
-              {isActive && (
-                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#D8C7A5]" />
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {/* 4 MODULAR TABS HEADER (Hidden on mobile when using bottom navigation) */}
+      {!hideTabsHeader && (
+        <div 
+          role="tablist" 
+          aria-label="Pestañas de edición cinematográfica"
+          className="grid grid-cols-4 border-b border-[#232328] bg-[#121215] shrink-0"
+        >
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                role="tab"
+                id={`tab-${tab.id}`}
+                aria-selected={isActive}
+                aria-controls={`panel-${tab.id}`}
+                tabIndex={isActive ? 0 : -1}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 py-3 px-2 text-xs font-medium tracking-wide transition-all relative cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#D8C7A5] ${
+                  isActive
+                    ? 'text-[#EAE8E2] bg-[#17171B]'
+                    : 'text-[#9E9C96] hover:text-[#EAE8E2] hover:bg-[#151518]'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 transition-colors ${isActive ? 'text-[#D8C7A5]' : 'text-[#686662]'}`} />
+                <span className="text-[11px] sm:text-xs">{tab.label}</span>
+                {isActive && (
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#D8C7A5]" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* TAB CONTENT AREA */}
-      <div className="flex-1 overflow-y-auto px-5 py-6">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 sm:py-6 overscroll-contain">
         
         {/* ============================================================== */}
         {/* TAB 1: ENCUADRE                                                */}
@@ -178,7 +190,7 @@ export function Controls({
               <div 
                 role="radiogroup" 
                 aria-labelledby="format-heading" 
-                className="grid grid-cols-3 gap-2"
+                className="flex overflow-x-auto gap-2 pb-1.5 snap-x snap-mandatory no-scrollbar lg:grid lg:grid-cols-3 lg:gap-2 lg:overflow-visible"
               >
                 {ASPECT_FORMATS.map((fmt) => {
                   const isSelected = state.format === fmt.id;
@@ -188,7 +200,7 @@ export function Controls({
                       role="radio"
                       aria-checked={isSelected}
                       onClick={() => onChange({ format: fmt.id as AspectFormat })}
-                      className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-md border text-center transition-all cursor-pointer ${
+                      className={`flex flex-col items-center justify-center py-2.5 px-3 rounded-md border text-center transition-all cursor-pointer shrink-0 min-w-[88px] snap-start lg:shrink lg:min-w-0 ${
                         isSelected
                           ? 'bg-[#EAE8E2] text-[#0A0A0B] border-[#EAE8E2] font-semibold shadow-sm'
                           : 'bg-[#141417] text-[#9E9C96] border-[#232328] hover:text-[#EAE8E2] hover:border-[#35353C]'
@@ -396,11 +408,11 @@ export function Controls({
                 )}
               </div>
 
-              {/* Gallery Grid */}
+              {/* Gallery Grid / Carousel on mobile */}
               <div 
                 role="radiogroup" 
                 aria-label="Seleccionar estilo cinematográfico"
-                className="grid grid-cols-2 gap-2"
+                className="flex overflow-x-auto gap-2.5 pb-2 pt-1 -mx-1 px-1 snap-x snap-mandatory no-scrollbar lg:grid lg:grid-cols-2 lg:overflow-visible lg:p-0 lg:m-0"
               >
                 {PRESET_GALLERY_LIST.map((presetItem) => {
                   const isSelected = state.preset === presetItem.id;
@@ -411,7 +423,7 @@ export function Controls({
                       role="radio"
                       aria-checked={isSelected}
                       onClick={() => onPresetSelect(presetItem.id)}
-                      className={`group relative flex flex-col p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                      className={`group relative flex flex-col p-2.5 rounded-lg border text-left transition-all cursor-pointer shrink-0 w-36 sm:w-40 snap-start lg:w-auto lg:shrink ${
                         isSelected
                           ? 'bg-[#18181D] border-[#D8C7A5] shadow-[0_0_12px_rgba(216,199,165,0.12)] ring-1 ring-[#D8C7A5]/60'
                           : 'bg-[#121215] border-[#232328] hover:border-[#383842] hover:bg-[#151518]'
@@ -419,7 +431,7 @@ export function Controls({
                     >
                       {/* Swatch gradient header */}
                       <div 
-                        className="w-full h-7 rounded mb-1.5 flex items-center justify-end px-1.5 shadow-inner relative overflow-hidden"
+                        className="w-full h-8 rounded mb-1.5 flex items-center justify-end px-1.5 shadow-inner relative overflow-hidden"
                         style={{ background: presetItem.gradient }}
                       >
                         {isSelected && (
@@ -490,6 +502,29 @@ export function Controls({
               <span className="text-xs font-semibold uppercase tracking-wider text-[#9E9C96] block">
                 Revelado de Laboratorio
               </span>
+
+              {/* Exposure */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[#9E9C96]">Exposición</span>
+                  <span className="font-mono text-[#D8C7A5]">
+                    {(state.exposure ?? 0) > 0 ? `+${state.exposure}` : state.exposure ?? 0}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  aria-label="Exposición"
+                  min="-30"
+                  max="30"
+                  value={state.exposure ?? 0}
+                  onChange={(e) => onChange({ exposure: Number(e.target.value) })}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-[10px] text-[#686662] font-mono">
+                  <span>-30 Nocturna</span>
+                  <span>+30 Luminosa</span>
+                </div>
+              </div>
 
               {/* Contrast */}
               <div className="space-y-1.5">
@@ -580,6 +615,29 @@ export function Controls({
                 <div className="flex justify-between text-[10px] text-[#686662] font-mono">
                   <span>-50 Recuperadas</span>
                   <span>+20 Brillantes</span>
+                </div>
+              </div>
+
+              {/* Shadows */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[#9E9C96]">Sombras</span>
+                  <span className="font-mono text-[#D8C7A5]">
+                    {(state.shadows ?? 0) > 0 ? `+${state.shadows}` : state.shadows ?? 0}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  aria-label="Sombras"
+                  min="-50"
+                  max="30"
+                  value={state.shadows ?? 0}
+                  onChange={(e) => onChange({ shadows: Number(e.target.value) })}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-[10px] text-[#686662] font-mono">
+                  <span>-50 Profundas</span>
+                  <span>+30 Aclaradas</span>
                 </div>
               </div>
             </div>
@@ -725,11 +783,11 @@ export function Controls({
                     ) : null}
                   </div>
 
-                  {/* Templates Grid */}
+                  {/* Templates Grid / Carousel on mobile */}
                   <div 
                     role="radiogroup" 
                     aria-label="Seleccionar plantilla de composición"
-                    className="grid grid-cols-2 gap-2"
+                    className="flex overflow-x-auto gap-2.5 pb-2 pt-1 -mx-1 px-1 snap-x snap-mandatory no-scrollbar lg:grid lg:grid-cols-2 lg:overflow-visible lg:p-0 lg:m-0"
                   >
                     {TEMPLATES_GALLERY_LIST.map((templateItem) => {
                       const isSelected = state.template === templateItem.id;
@@ -747,14 +805,14 @@ export function Controls({
                               onChange(updates);
                             }
                           }}
-                          className={`group relative flex flex-col p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                          className={`group relative flex flex-col p-2.5 rounded-lg border text-left transition-all cursor-pointer shrink-0 w-36 sm:w-40 snap-start lg:w-auto lg:shrink ${
                             isSelected
                               ? 'bg-[#18181D] border-[#D8C7A5] shadow-[0_0_12px_rgba(216,199,165,0.12)] ring-1 ring-[#D8C7A5]/60'
                               : 'bg-[#121215] border-[#232328] hover:border-[#383842] hover:bg-[#151518]'
                           }`}
                         >
                           {/* Mini visual frame thumbnail */}
-                          <div className="w-full h-9 rounded bg-[#0A0A0B] border border-[#202025] mb-1.5 flex items-center justify-center relative overflow-hidden shadow-inner">
+                          <div className="w-full h-10 rounded bg-[#0A0A0B] border border-[#202025] mb-1.5 flex items-center justify-center relative overflow-hidden shadow-inner">
                             <TemplateThumbnail id={templateItem.id} />
                             {isSelected && (
                               <div className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-[#D8C7A5] text-[#0A0A0B] flex items-center justify-center">
@@ -888,7 +946,7 @@ export function Controls({
                   {/* Color Palette */}
                   <div className="space-y-1.5">
                     <span className="text-xs text-[#9E9C96]">Tono Cromático</span>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex overflow-x-auto gap-2 pb-1 no-scrollbar lg:flex-wrap">
                       {CINEMATIC_TEXT_COLORS.map((col) => {
                         const isSelected = state.textColor === col.value;
                         return (
@@ -896,7 +954,7 @@ export function Controls({
                             key={col.id}
                             type="button"
                             onClick={() => onChange({ textColor: col.value })}
-                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-all cursor-pointer ${
+                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-all cursor-pointer shrink-0 lg:shrink ${
                               isSelected
                                 ? 'bg-[#212128] border-[#D8C7A5] text-[#EAE8E2]'
                                 : 'bg-[#141417] border-[#232328] text-[#9E9C96] hover:text-[#EAE8E2]'
@@ -993,7 +1051,7 @@ export function Controls({
                       {/* Color Palette for Background */}
                       <div className="space-y-1.5">
                         <span className="text-xs text-[#9E9C96]">Color de fondo</span>
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex overflow-x-auto items-center gap-2 pb-1 no-scrollbar lg:flex-wrap">
                           {CINEMATIC_BG_COLORS.map((bgCol) => {
                             const isSelected = (state.textBackgroundColor ?? '#000000') === bgCol.value;
                             return (
@@ -1001,7 +1059,7 @@ export function Controls({
                                 key={bgCol.id}
                                 type="button"
                                 onClick={() => onChange({ textBackgroundColor: bgCol.value })}
-                                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-all cursor-pointer ${
+                                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs transition-all cursor-pointer shrink-0 lg:shrink ${
                                   isSelected
                                     ? 'bg-[#212128] border-[#D8C7A5] text-[#EAE8E2]'
                                     : 'bg-[#141417] border-[#232328] text-[#9E9C96] hover:text-[#EAE8E2]'
@@ -1019,7 +1077,7 @@ export function Controls({
                           {/* Custom Color Input */}
                           <label 
                             title="Color personalizado"
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#232328] bg-[#141417] text-[#9E9C96] hover:text-[#EAE8E2] text-[11px] cursor-pointer"
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#232328] bg-[#141417] text-[#9E9C96] hover:text-[#EAE8E2] text-[11px] cursor-pointer shrink-0 lg:shrink"
                           >
                             <input
                               type="color"
@@ -1224,25 +1282,27 @@ export function Controls({
       </div>
 
       {/* FOOTER ACTIONS IN SIDEBAR */}
-      <div className="p-4 border-t border-[#232328] bg-[#121215] shrink-0 flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={onReset}
-          className="text-xs text-[#9E9C96] hover:text-[#EAE8E2] transition-colors py-1.5 px-2 cursor-pointer flex items-center gap-1.5"
-          title="Restablece todos los parámetros a los valores iniciales"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          Restablecer todo
-        </button>
+      {!hideFooterActions && (
+        <div className="p-4 border-t border-[#232328] bg-[#121215] shrink-0 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={onReset}
+            className="text-xs text-[#9E9C96] hover:text-[#EAE8E2] transition-colors py-1.5 px-2 cursor-pointer flex items-center gap-1.5"
+            title="Restablece todos los parámetros a los valores iniciales"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Restablecer todo
+          </button>
 
-        <button
-          type="button"
-          onClick={onDownload}
-          className="py-2.5 px-4 bg-[#EAE8E2] hover:bg-white text-[#0A0A0B] text-xs font-semibold rounded-md transition-all flex items-center gap-2 cursor-pointer shadow-sm tracking-wide"
-        >
-          Exportar JPG
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={onDownload}
+            className="py-2.5 px-4 bg-[#EAE8E2] hover:bg-white text-[#0A0A0B] text-xs font-semibold rounded-md transition-all flex items-center gap-2 cursor-pointer shadow-sm tracking-wide"
+          >
+            Exportar JPG
+          </button>
+        </div>
+      )}
 
     </div>
   );

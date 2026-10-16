@@ -37,10 +37,21 @@ input[type="range"] {
   appearance: none;
   background: transparent;
   cursor: pointer;
+  height: 28px;
+  touch-action: pan-x;
 }
 
 input[type="range"]:focus {
   outline: none;
+}
+
+/* Hide scrollbar for carousels */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* WebKit (Chrome, Safari, Edge) Track & Thumb */

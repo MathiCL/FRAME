@@ -55,10 +55,12 @@ export interface EditorState {
   letterbox: boolean;
 
   // --- Color & Effects ---
+  exposure?: number;
   contrast: number;
   saturation: number;
   temperature: number;
   highlights: number;
+  shadows?: number;
   grain: number;
   vignette: number;
   preset: Preset;
@@ -105,6 +107,7 @@ export type Preset =
   | 'NOIR'
   | 'DREAMY'
   | 'INDIE'
+  | 'AFTER_HOURS'
   | 'CINEMA'
   | 'VINTAGE'
   | 'CUSTOM';
@@ -113,4 +116,7 @@ export type Preset =
 export type PresetValues = Pick<
   EditorState,
   'contrast' | 'saturation' | 'temperature' | 'highlights' | 'grain' | 'vignette'
->;
+> & {
+  exposure?: number;
+  shadows?: number;
+};

@@ -100,42 +100,62 @@ export function renderCinematicFrame({ state, canvas, showOriginal = false }: Re
   ctx.drawImage(img, imageRect.x, imageRect.y, imageRect.width, imageRect.height);
   ctx.filter = 'none';
 
-  // --- 2. ADVANCED COLOR GRADING (Highlights & Temperature) ---
-  if (state.highlights !== 0 || state.temperature !== 0) {
+  // --- 2. ADVANCED COLOR GRADING (Exposure, Highlights, Shadows & Temperature) ---
+  const exposure = (state.exposure ?? 0) / 100; // range -0.5 to 0.5
+  const highlights = state.highlights / 100;     // range -0.5 to 0.2
+  const shadows = (state.shadows ?? 0) / 100;       // range -0.5 to 0.5
+  const temp = state.temperature;                   // range -30 to 30
+
+  if (exposure !== 0 || highlights !== 0 || shadows !== 0 || temp !== 0) {
     // Process only the image area (integer rect, see geometry.ts)
     const imgData = ctx.getImageData(area.x, area.y, area.width, area.height);
     const data = imgData.data;
-    
-    const highlights = state.highlights / 100; // range roughly -0.5 to 0.2
-    const temp = state.temperature; // range -30 to 30
 
     for (let i = 0; i < data.length; i += 4) {
       let r = data[i];
       let g = data[i + 1];
       let b = data[i + 2];
 
-      // Temperature adjustment (shifting R and B channels)
-      if (temp !== 0) {
-        // Subtle non-linear shift to preserve extremes
-        const rShift = temp * 1.5;
-        const bShift = -temp * 1.5;
-        r = r + rShift * (1 - Math.abs(r - 128) / 256);
-        b = b + bShift * (1 - Math.abs(b - 128) / 256);
+      let luma = 0.299 * r + 0.587 * g + 0.114 * b;
+
+      // 1. Exposure / ambient luminosity shift
+      if (exposure !== 0) {
+        const expFactor = 1 + exposure;
+        r *= expFactor;
+        g *= expFactor;
+        b *= expFactor;
+        luma *= expFactor;
       }
 
-      // Highlights recovery (compressing the top end of the luma curve)
-      if (highlights !== 0) {
-        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-        // Only affect pixels brighter than mid-gray
-        if (luma > 128) {
-          // Calculate how far into the highlights this pixel is (0.0 to 1.0)
-          const highlightFactor = (luma - 128) / 127;
-          // Apply curve
-          const adjustment = 1 + (highlights * highlightFactor);
-          r *= adjustment;
-          g *= adjustment;
-          b *= adjustment;
-        }
+      // 2. Shadows deepening (smooth progressive drop for darks, zero impact on bright highlights)
+      if (shadows !== 0 && luma < 160) {
+        const shadowFactor = (160 - luma) / 160;
+        const weight = shadowFactor * shadowFactor;
+        const shadowAdj = 1 + (shadows * weight);
+        r *= shadowAdj;
+        g *= shadowAdj;
+        b *= shadowAdj;
+        luma *= shadowAdj;
+      }
+
+      // 3. Highlights shaping (retains luminosity on practical lamps, skin, wood sheen)
+      if (highlights !== 0 && luma > 120) {
+        const highlightFactor = (luma - 120) / 135;
+        const weight = highlightFactor * highlightFactor;
+        const highlightAdj = 1 + (highlights * weight);
+        r *= highlightAdj;
+        g *= highlightAdj;
+        b *= highlightAdj;
+      }
+
+      // 4. Temperature with shadow isolation (pure blacks remain black, warmth lives in light)
+      if (temp !== 0) {
+        const rShift = temp * 1.5;
+        const bShift = -temp * 1.5;
+        const shadowGate = Math.min(1, Math.max(0, luma / 40));
+        const bellCurve = (1 - Math.abs(Math.min(255, Math.max(0, luma)) - 128) / 256) * shadowGate;
+        r = r + rShift * bellCurve;
+        b = b + bShift * bellCurve;
       }
 
       data[i] = Math.min(255, Math.max(0, r));
@@ -167,10 +187,11 @@ export function renderCinematicFrame({ state, canvas, showOriginal = false }: Re
     const radiusY = area.height * 0.8;
     const radius = Math.max(radiusX, radiusY); 
     
-    const gradient = ctx.createRadialGradient(cx, cy, radius * 0.3, cx, cy, radius);
+    const gradient = ctx.createRadialGradient(cx, cy, radius * 0.25, cx, cy, radius);
     gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    gradient.addColorStop(0.5, `rgba(0, 0, 0, ${state.vignette / 100 * 0.1})`);
-    gradient.addColorStop(1, `rgba(0, 0, 0, ${state.vignette / 100 * 0.7})`);
+    gradient.addColorStop(0.4, `rgba(0, 0, 0, ${state.vignette / 100 * 0.15})`);
+    gradient.addColorStop(0.75, `rgba(0, 0, 0, ${state.vignette / 100 * 0.55})`);
+    gradient.addColorStop(1, `rgba(0, 0, 0, ${state.vignette / 100 * 0.92})`);
     
     ctx.fillStyle = gradient;
     ctx.fillRect(area.x, area.y, area.width, area.height);
@@ -183,19 +204,111 @@ export function renderCinematicFrame({ state, canvas, showOriginal = false }: Re
   renderCinematicText(ctx, area, state);
 }
 
-export async function exportCanvasAsImage(canvas: HTMLCanvasElement, filename: string = 'frame.jpg') {
-  if (typeof document !== 'undefined' && 'fonts' in document) {
+export interface ExportResult {
+  success: boolean;
+  method: 'share' | 'download' | 'preview';
+  blob: Blob;
+  blobUrl: string;
+  canceled?: boolean;
+}
+
+export function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  type = 'image/jpeg',
+  quality = 0.95
+): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          try {
+            const dataUrl = canvas.toDataURL(type, quality);
+            const byteString = atob(dataUrl.split(',')[1]);
+            const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0];
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+              ia[i] = byteString.charCodeAt(i);
+            }
+            resolve(new Blob([ab], { type: mimeString }));
+          } catch {
+            reject(new Error('No se pudo generar el archivo de imagen a partir del lienzo.'));
+          }
+        }
+      },
+      type,
+      quality
+    );
+  });
+}
+
+export async function exportCanvasAsImage(
+  canvas: HTMLCanvasElement,
+  filename: string = 'frame.jpg'
+): Promise<ExportResult> {
+  // Only await fonts if they are still actively loading, preserving the synchronous user gesture
+  if (typeof document !== 'undefined' && 'fonts' in document && document.fonts.status !== 'loaded') {
     try {
       await document.fonts.ready;
     } catch {
       // fallback if fonts ready check errors
     }
   }
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-  const link = document.createElement('a');
-  link.download = filename;
-  link.href = dataUrl;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+
+  const blob = await canvasToBlob(canvas, 'image/jpeg', 0.95);
+  const blobUrl = URL.createObjectURL(blob);
+
+  const isMobile =
+    typeof navigator !== 'undefined' &&
+    (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+  // 1. Try Web Share API (optimal for iOS Safari & Android Share Sheet)
+  if (isMobile && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      const file = new File([blob], filename, { type: 'image/jpeg' });
+      if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'FRAME — Fotografía cinematográfica',
+        });
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        return { success: true, method: 'share', blob, blobUrl };
+      }
+    } catch (shareError: unknown) {
+      if (shareError instanceof Error && shareError.name === 'AbortError') {
+        // User dismissed the native share sheet
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        return { success: true, method: 'share', blob, blobUrl, canceled: true };
+      }
+      console.warn('Web Share API error, attempting fallback:', shareError);
+    }
+  }
+
+  // 2. Direct download with Blob URL for Desktop & Android browsers
+  const isIOS =
+    typeof navigator !== 'undefined' &&
+    (/iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+  if (!isIOS) {
+    try {
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      return { success: true, method: 'download', blob, blobUrl };
+    } catch (downloadError) {
+      console.warn('Direct download anchor failed:', downloadError);
+    }
+  }
+
+  // 3. Fallback for iOS or environments where direct download cannot be guaranteed:
+  // Returns blobUrl for the UI to display in the dedicated save modal (revoked when modal closes)
+  return { success: true, method: 'preview', blob, blobUrl };
 }
