@@ -36,7 +36,9 @@ export interface ControlsProps {
   onReset: () => void;
   onResetFraming?: () => void;
   onResetColor?: () => void;
+  onResetTexture?: () => void;
   onResetText?: () => void;
+  onResetCurrentSection?: () => void;
   activeTab?: TabKey;
   onTabChange?: (tab: TabKey) => void;
   hideTabsHeader?: boolean;
@@ -88,6 +90,16 @@ function TemplateThumbnail({ id }: { id: TemplateId }) {
   }
 }
 
+const FONT_OPTIONS: Array<{ id: TextFont; label: string; subtitle: string }> = [
+  { id: 'type-machine', label: 'Type Machine', subtitle: 'Mecanografía vintage' },
+  { id: 'elegant-typewriter', label: 'Elegant Typewriter', subtitle: 'Mecanografía fina' },
+  { id: 'courier-prime', label: 'Máquina Clásica', subtitle: 'Guion de cine' },
+  { id: 'montserrat', label: 'Editorial Sans', subtitle: 'Sans limpia' },
+  { id: 'serif', label: 'Serif Editorial', subtitle: 'Clásica literaria' },
+  { id: 'sans', label: 'Sans Cine', subtitle: 'Subtítulo moderno' },
+  { id: 'mono', label: 'Monospace', subtitle: 'Teletexto técnico' },
+];
+
 export function Controls({
   state,
   onChange,
@@ -98,7 +110,9 @@ export function Controls({
   onReset,
   onResetFraming,
   onResetColor,
+  onResetTexture,
   onResetText,
+  onResetCurrentSection,
   activeTab: activeTabProp,
   onTabChange: onTabChangeProp,
   hideTabsHeader = false,
@@ -107,6 +121,27 @@ export function Controls({
   const [internalTab, setInternalTab] = useState<TabKey>('encuadre');
   const activeTab = activeTabProp ?? internalTab;
   const setActiveTab = onTabChangeProp ?? setInternalTab;
+
+  const handleResetCurrentSection = () => {
+    if (onResetCurrentSection) {
+      onResetCurrentSection();
+      return;
+    }
+    switch (activeTab) {
+      case 'encuadre':
+        onResetFraming?.();
+        break;
+      case 'color':
+        onResetColor?.();
+        break;
+      case 'textura':
+        onResetTexture?.();
+        break;
+      case 'texto':
+        onResetText?.();
+        break;
+    }
+  };
 
   // Compute boundaries for interactive pan and zoom sliders
   const layout = state.image ? computeFrameLayout(state.format, state.image, state.letterbox) : null;
@@ -730,6 +765,18 @@ export function Controls({
                 El grano se sintetiza proceduralmente durante la exportación JPG final para evitar artefactos de compresión digital.
               </p>
             </div>
+
+            {/* Reset texture to clean default */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={onResetTexture ?? (() => onChange({ grain: 0, vignette: 0 }))}
+                className="w-full py-2 px-3 rounded-md border border-[#232328] bg-[#121215] text-[#9E9C96] hover:text-[#EAE8E2] hover:border-[#35353C] text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Restablecer textura a inicial
+              </button>
+            </div>
           </div>
         )}
 
@@ -924,22 +971,34 @@ export function Controls({
                 <div className="space-y-4 pt-2 border-t border-[#1F1F24]">
                   {/* Font */}
                   <div className="space-y-1.5">
-                    <span className="text-xs text-[#9E9C96]">Familia Tipográfica</span>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(['serif', 'sans', 'mono'] as TextFont[]).map((font) => (
-                        <button
-                          key={font}
-                          type="button"
-                          onClick={() => onChange({ textFont: font })}
-                          className={`py-2 px-2 text-xs font-medium rounded-md border transition-all cursor-pointer ${
-                            state.textFont === font
-                              ? 'bg-[#EAE8E2] text-[#0A0A0B] border-[#EAE8E2] font-semibold'
-                              : 'bg-[#141417] text-[#9E9C96] border-[#232328] hover:text-[#EAE8E2]'
-                          }`}
-                        >
-                          {FONT_STACKS[font].label.split(' ')[0]}
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-[#9E9C96]">Familia Tipográfica</span>
+                      <span className="text-[10px] text-[#D8C7A5] font-mono">
+                        {FONT_STACKS[state.textFont]?.label ?? 'Tipografía'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {FONT_OPTIONS.map((font) => {
+                        const isSelected = state.textFont === font.id;
+                        return (
+                          <button
+                            key={font.id}
+                            type="button"
+                            onClick={() => onChange({ textFont: font.id })}
+                            style={{ fontFamily: FONT_STACKS[font.id]?.family }}
+                            className={`py-2 px-2.5 rounded-md border transition-all cursor-pointer text-left flex flex-col justify-center ${
+                              isSelected
+                                ? 'bg-[#EAE8E2] text-[#0A0A0B] border-[#EAE8E2] font-semibold shadow-sm'
+                                : 'bg-[#141417] text-[#9E9C96] border-[#232328] hover:text-[#EAE8E2] hover:border-[#383842]'
+                            }`}
+                          >
+                            <span className="text-[11px] leading-tight font-medium truncate">{font.label}</span>
+                            <span className={`text-[9px] mt-0.5 font-sans truncate ${isSelected ? 'text-[#3E3C36]' : 'text-[#686662]'}`}>
+                              {font.subtitle}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1283,16 +1342,27 @@ export function Controls({
 
       {/* FOOTER ACTIONS IN SIDEBAR */}
       {!hideFooterActions && (
-        <div className="p-4 border-t border-[#232328] bg-[#121215] shrink-0 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={onReset}
-            className="text-xs text-[#9E9C96] hover:text-[#EAE8E2] transition-colors py-1.5 px-2 cursor-pointer flex items-center gap-1.5"
-            title="Restablece todos los parámetros a los valores iniciales"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Restablecer todo
-          </button>
+        <div className="p-4 border-t border-[#232328] bg-[#121215] shrink-0 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleResetCurrentSection}
+              className="text-xs text-[#9E9C96] hover:text-[#EAE8E2] transition-colors py-1 px-2 rounded hover:bg-[#18181D] cursor-pointer flex items-center gap-1.5"
+              title="Restablece únicamente los ajustes de la pestaña actual sin alterar las demás"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#D8C7A5]" />
+              <span>Restablecer sección</span>
+            </button>
+            <span className="text-[#35353C] text-xs">|</span>
+            <button
+              type="button"
+              onClick={onReset}
+              className="text-[11px] text-[#6E6C66] hover:text-[#9E9C96] transition-colors py-1 px-1.5 cursor-pointer"
+              title="Restablece todos los parámetros del editor a valores iniciales"
+            >
+              Todo
+            </button>
+          </div>
 
           <button
             type="button"

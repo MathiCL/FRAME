@@ -16,7 +16,14 @@ export type FitMode = 'fit' | 'fill';
 export type TextType = 'quote' | 'subtitle';
 
 /** Typography stacks reliably available in browser Canvas. */
-export type TextFont = 'serif' | 'sans' | 'mono';
+export type TextFont =
+  | 'serif'
+  | 'sans'
+  | 'mono'
+  | 'type-machine'
+  | 'elegant-typewriter'
+  | 'courier-prime'
+  | 'montserrat';
 
 /** Horizontal text alignment. */
 export type TextAlign = 'left' | 'center' | 'right';

@@ -17,10 +17,12 @@ export const CINEMATIC_PRESETS: Record<Exclude<Preset, 'CUSTOM'>, PresetDefiniti
     description: 'Fotografía pura con valores de revelado neutros.',
     gradient: 'linear-gradient(135deg, #2E2E36 0%, #121215 100%)',
     values: {
+      exposure: 0,
       contrast: 0,
       saturation: 0,
       temperature: 0,
       highlights: 0,
+      shadows: 0,
       grain: 0,
       vignette: 0,
     },

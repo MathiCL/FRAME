@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   RotateCcw,
+  Info,
 } from 'lucide-react';
 import { ImageUploader } from '@/components/ImageUploader';
 import { CinemaCanvas } from '@/components/CinemaCanvas';
@@ -34,6 +35,23 @@ import {
 import { applyTemplate, getTemplateDisplayName } from '@/lib/templates';
 
 const emptySubscribe = () => () => {};
+
+// Filter out spurious hydration noise caused by third-party browser extensions (e.g. Bitdefender, Urban VPN)
+// injecting 'bis_skin_checked' into Next.js's internal metadata streaming boundary before React hydrates.
+if (typeof window !== 'undefined') {
+  const origError = window.console.error;
+  window.console.error = function (...args: unknown[]) {
+    for (const arg of args) {
+      if (
+        typeof arg === 'string' &&
+        (arg.includes('bis_skin_checked') || arg.includes('__next_metadata_boundary__'))
+      ) {
+        return;
+      }
+    }
+    return origError.apply(window.console, args);
+  };
+}
 
 const INITIAL_STATE: EditorState = {
   image: null,
@@ -78,7 +96,10 @@ export default function Home() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
   const [exportPreview, setExportPreview] = useState<{ blobUrl: string; blob: Blob; filename: string } | null>(null);
-  const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
+  const [exportFeedback, setExportFeedback] = useState<{
+    type: 'download' | 'share' | 'canceled' | 'preview' | 'error';
+    message: string;
+  } | null>(null);
   const [isComparing, setIsComparing] = useState(false);
   const [activeCategory, setActiveCategory] = useState<TabKey>('encuadre');
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(true);
@@ -95,6 +116,22 @@ export default function Home() {
 
   const stopComparison = useCallback(() => {
     setIsComparing(false);
+  }, []);
+
+  // Filter out extension-injected hydration errors so the dev overlay is not falsely triggered
+  useEffect(() => {
+    const origError = window.console.error;
+    window.console.error = function (...args: unknown[]) {
+      for (const arg of args) {
+        if (
+          typeof arg === 'string' &&
+          (arg.includes('bis_skin_checked') || arg.includes('__next_metadata_boundary__'))
+        ) {
+          return;
+        }
+      }
+      return origError.apply(window.console, args);
+    };
   }, []);
 
   // Global safety listener: release comparison on any window-level pointerup, blur, or cancel
@@ -333,7 +370,7 @@ export default function Home() {
   const handleDownload = useCallback(async () => {
     if (!state.image || isExporting) return;
     setIsExporting(true);
-    setExportErrorMessage(null);
+    setExportFeedback(null);
     try {
       // Guarantee that the exported JPG is ALWAYS the fully edited result,
       // even if the user happens to hold the comparison button during export!
@@ -352,17 +389,49 @@ export default function Home() {
           blob: result.blob,
           filename: 'frame.jpg',
         });
-      } else if (!result.canceled) {
+        setExportFeedback({
+          type: 'preview',
+          message: 'Vista previa abierta: mantén pulsada la imagen para guardar en Fotos.',
+        });
+        setTimeout(() => setExportFeedback(null), 4500);
+      } else if (result.method === 'share') {
+        if (result.canceled) {
+          // User closed or canceled the native share sheet
+          setExportFeedback({
+            type: 'canceled',
+            message: 'Acción de compartir cancelada.',
+          });
+          setTimeout(() => setExportFeedback(null), 2500);
+        } else {
+          // Native share sheet was opened
+          setExportSuccess(true);
+          setExportFeedback({
+            type: 'share',
+            message: 'Hoja de compartir abierta: confirma guardar en Fotos o enviar.',
+          });
+          setTimeout(() => {
+            setExportSuccess(false);
+            setExportFeedback(null);
+          }, 3500);
+        }
+      } else if (result.method === 'download') {
+        // Direct download completed
         setExportSuccess(true);
-        setTimeout(() => setExportSuccess(false), 2500);
+        setExportFeedback({
+          type: 'download',
+          message: 'Fotografía cinematográfica descargada con éxito.',
+        });
+        setTimeout(() => {
+          setExportSuccess(false);
+          setExportFeedback(null);
+        }, 3000);
       }
     } catch (error) {
       console.error('Export error:', error);
-      setExportErrorMessage(
-        error instanceof Error
-          ? error.message
-          : 'No se pudo exportar la fotografía. Por favor inténtalo de nuevo.'
-      );
+      const msg = error instanceof Error
+        ? error.message
+        : 'No se pudo exportar la fotografía. Por favor inténtalo de nuevo.';
+      setExportFeedback({ type: 'error', message: msg });
     } finally {
       setIsExporting(false);
     }
@@ -384,11 +453,21 @@ export default function Home() {
           files: [file],
           title: 'FRAME — Fotografía cinematográfica',
         });
+        setExportFeedback({
+          type: 'share',
+          message: 'Hoja de compartir abierta: confirma guardar en Fotos o enviar.',
+        });
+        setTimeout(() => setExportFeedback(null), 3500);
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') {
+          setExportFeedback({
+            type: 'canceled',
+            message: 'Acción de compartir cancelada.',
+          });
+          setTimeout(() => setExportFeedback(null), 2500);
           return;
         }
-        setExportErrorMessage('No se pudo abrir la hoja de compartir del sistema.');
+        setExportFeedback({ type: 'error', message: 'No se pudo abrir la hoja de compartir del sistema.' });
       }
     }
   }, [exportPreview]);
@@ -616,10 +695,17 @@ export default function Home() {
                 className="h-8 sm:h-9 px-3 sm:px-4 bg-[#EAE8E2] hover:bg-white text-[#0A0A0B] text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer shadow-sm tracking-wide disabled:opacity-50"
               >
                 {exportSuccess ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-700 stroke-[3]" />
-                    <span className="hidden xs:inline">¡Exportado!</span>
-                  </>
+                  exportFeedback?.type === 'share' ? (
+                    <>
+                      <Share2 className="w-3.5 h-3.5 text-[#0A0A0B]" />
+                      <span className="hidden xs:inline">Compartir listo</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-700 stroke-[3]" />
+                      <span className="hidden xs:inline">¡Descargado!</span>
+                    </>
+                  )
                 ) : (
                   <>
                     <Download className="w-3.5 h-3.5" />
@@ -735,7 +821,9 @@ export default function Home() {
                 onReset={() => setState({ ...INITIAL_STATE, image: state.image })}
                 onResetFraming={handleResetFraming}
                 onResetColor={() => handlePresetSelect('ORIGINAL')}
+                onResetTexture={handleResetTexture}
                 onResetText={handleResetText}
+                onResetCurrentSection={handleCurrentCategoryReset}
               />
             </aside>
 
@@ -811,7 +899,9 @@ export default function Home() {
                       onReset={() => setState({ ...INITIAL_STATE, image: state.image })}
                       onResetFraming={handleResetFraming}
                       onResetColor={() => handlePresetSelect('ORIGINAL')}
+                      onResetTexture={handleResetTexture}
                       onResetText={handleResetText}
+                      onResetCurrentSection={handleCurrentCategoryReset}
                       hideTabsHeader={true}
                       hideFooterActions={true}
                     />
@@ -823,43 +913,45 @@ export default function Home() {
               <nav
                 role="tablist"
                 aria-label="Categorías de edición cinematográfica"
-                className="h-13 border-t border-[#232328] bg-[#121215] grid grid-cols-4 items-center shrink-0 select-none"
+                className="shrink-0 border-t border-[#232328] bg-[#121215] select-none"
                 style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
               >
-                {CATEGORIES.map((cat) => {
-                  const Icon = cat.icon;
-                  const isActive = activeCategory === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      role="tab"
-                      id={`mobile-tab-${cat.id}`}
-                      aria-selected={isActive}
-                      aria-expanded={isActive && isMobilePanelOpen}
-                      aria-controls={`mobile-panel-${cat.id}`}
-                      onClick={() => handleMobileCategoryClick(cat.id)}
-                      className={`flex flex-col items-center justify-center py-1.5 relative transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#D8C7A5] ${
-                        isActive
-                          ? 'text-[#EAE8E2] bg-[#16161A]'
-                          : 'text-[#8E8C86] hover:text-[#C5C3BD]'
-                      }`}
-                    >
-                      <div className="relative">
-                        <Icon className={`w-4 h-4 transition-colors ${isActive ? 'text-[#D8C7A5]' : 'text-[#706E69]'}`} />
+                <div className="h-13 grid grid-cols-4 items-center">
+                  {CATEGORIES.map((cat) => {
+                    const Icon = cat.icon;
+                    const isActive = activeCategory === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        role="tab"
+                        id={`mobile-tab-${cat.id}`}
+                        aria-selected={isActive}
+                        aria-expanded={isActive && isMobilePanelOpen}
+                        aria-controls={`mobile-panel-${cat.id}`}
+                        onClick={() => handleMobileCategoryClick(cat.id)}
+                        className={`h-full flex flex-col items-center justify-center py-1.5 relative transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#D8C7A5] ${
+                          isActive
+                            ? 'text-[#EAE8E2] bg-[#16161A]'
+                            : 'text-[#8E8C86] hover:text-[#C5C3BD]'
+                        }`}
+                      >
+                        <div className="relative">
+                          <Icon className={`w-4 h-4 transition-colors ${isActive ? 'text-[#D8C7A5]' : 'text-[#706E69]'}`} />
+                          {isActive && (
+                            <span className="absolute -top-1 -right-2.5 w-1.5 h-1.5 rounded-full bg-[#D8C7A5]" />
+                          )}
+                        </div>
+                        <span className={`text-[10px] mt-0.5 tracking-wide ${isActive ? 'font-semibold text-[#EAE8E2]' : 'font-normal'}`}>
+                          {cat.label}
+                        </span>
                         {isActive && (
-                          <span className="absolute -top-1 -right-2.5 w-1.5 h-1.5 rounded-full bg-[#D8C7A5]" />
+                          <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-[#D8C7A5]" />
                         )}
-                      </div>
-                      <span className={`text-[10px] mt-0.5 tracking-wide ${isActive ? 'font-semibold text-[#EAE8E2]' : 'font-normal'}`}>
-                        {cat.label}
-                      </span>
-                      {isActive && (
-                        <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-[#D8C7A5]" />
-                      )}
-                    </button>
-                  );
-                })}
+                      </button>
+                    );
+                  })}
+                </div>
               </nav>
             </section>
           </>
@@ -1017,20 +1109,36 @@ export default function Home() {
       )}
 
       {/* ============================================================== */}
-      {/* NOTIFICACIÓN TOAST DE ERROR DE EXPORTACIÓN                     */}
+      {/* NOTIFICACIÓN TOAST DE ESTADO DE EXPORTACIÓN Y MENSAJES          */}
       {/* ============================================================== */}
-      {exportErrorMessage && (
+      {exportFeedback && (
         <div 
-          role="alert"
-          className="fixed bottom-6 right-6 z-50 bg-[#1C1414] border border-rose-700/60 text-rose-200 px-4 py-3 rounded-lg shadow-2xl flex items-center gap-3 text-xs animate-in fade-in slide-in-from-bottom-2 max-w-sm"
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg shadow-2xl flex items-center gap-3 text-xs animate-in fade-in slide-in-from-bottom-2 max-w-sm ${
+            exportFeedback.type === 'error'
+              ? 'bg-[#1C1414] border border-rose-700/60 text-rose-200'
+              : exportFeedback.type === 'download'
+              ? 'bg-[#101814] border border-emerald-700/60 text-emerald-200'
+              : exportFeedback.type === 'share'
+              ? 'bg-[#16161C] border border-[#D8C7A5]/60 text-[#EAE8E2]'
+              : exportFeedback.type === 'canceled'
+              ? 'bg-[#141417] border border-[#2B2B32] text-[#A8A6A0]'
+              : 'bg-[#121217] border border-[#2B2B36] text-[#D8C7A5]'
+          }`}
         >
-          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-          <span className="flex-1">{exportErrorMessage}</span>
+          {exportFeedback.type === 'error' && <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />}
+          {exportFeedback.type === 'download' && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
+          {exportFeedback.type === 'share' && <Share2 className="w-4 h-4 text-[#D8C7A5] shrink-0" />}
+          {exportFeedback.type === 'canceled' && <Info className="w-4 h-4 text-[#8E8C86] shrink-0" />}
+          {exportFeedback.type === 'preview' && <Eye className="w-4 h-4 text-[#D8C7A5] shrink-0" />}
+          
+          <span className="flex-1 leading-relaxed">{exportFeedback.message}</span>
           <button
             type="button"
-            onClick={() => setExportErrorMessage(null)}
-            className="text-rose-400 hover:text-rose-100 p-0.5 cursor-pointer"
-            aria-label="Cerrar mensaje de error"
+            onClick={() => setExportFeedback(null)}
+            className="text-inherit opacity-60 hover:opacity-100 p-0.5 cursor-pointer"
+            aria-label="Cerrar notificación"
           >
             <X className="w-3.5 h-3.5" />
           </button>

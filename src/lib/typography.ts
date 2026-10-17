@@ -15,6 +15,22 @@ export const FONT_STACKS: Record<TextFont, { label: string; family: string }> = 
     label: 'Monospace Subtítulo',
     family: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
   },
+  'type-machine': {
+    label: 'Type Machine',
+    family: '"Type Machine", "Special Elite", "Courier New", monospace',
+  },
+  'elegant-typewriter': {
+    label: 'Elegant Typewriter',
+    family: '"Elegant Typewriter", "Courier Prime", "Cutive Mono", monospace',
+  },
+  'courier-prime': {
+    label: 'Máquina Clásica',
+    family: '"Courier Prime", "Courier New", Courier, monospace',
+  },
+  montserrat: {
+    label: 'Editorial Sans',
+    family: 'Montserrat, "Geist", Inter, system-ui, sans-serif',
+  },
 };
 
 /** Curated cinematic color palette */
