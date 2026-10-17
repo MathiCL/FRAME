@@ -58,7 +58,13 @@
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+html,
 body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);

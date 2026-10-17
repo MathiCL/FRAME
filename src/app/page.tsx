@@ -18,6 +18,8 @@ import {
   ChevronDown,
   ChevronUp,
   RotateCcw,
+  Undo2,
+  Redo2,
   Info,
 } from 'lucide-react';
 import { ImageUploader } from '@/components/ImageUploader';
@@ -107,6 +109,160 @@ export default function Home() {
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
 
+  // --- REAL VISIBLE VIEWPORT TRACKING FOR IOS SAFARI ---
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let rafId: number | null = null;
+    const updateViewportHeight = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        setViewportHeight(Math.round(height));
+      });
+    };
+
+    updateViewportHeight();
+
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener('resize', updateViewportHeight);
+      vv.addEventListener('scroll', updateViewportHeight);
+    }
+    window.addEventListener('resize', updateViewportHeight);
+    window.addEventListener('orientationchange', updateViewportHeight);
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (vv) {
+        vv.removeEventListener('resize', updateViewportHeight);
+        vv.removeEventListener('scroll', updateViewportHeight);
+      }
+      window.removeEventListener('resize', updateViewportHeight);
+      window.removeEventListener('orientationchange', updateViewportHeight);
+    };
+  }, []);
+
+  // --- UNDO / REDO HISTORY SYSTEM ---
+  const [past, setPast] = useState<EditorState[]>([]);
+  const [future, setFuture] = useState<EditorState[]>([]);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const isBatchingHistoryRef = useRef(false);
+  const batchStartSnapshotRef = useRef<EditorState | null>(null);
+  const historyDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const commitHistorySnapshot = useCallback((snapshot: EditorState) => {
+    setPast((prev) => {
+      const updated = [...prev, snapshot];
+      if (updated.length > 25) {
+        return updated.slice(updated.length - 25);
+      }
+      return updated;
+    });
+    setFuture([]);
+  }, []);
+
+  const recordHistoryChange = useCallback((isContinuous: boolean = false) => {
+    const current = stateRef.current;
+    if (!current.image) return;
+
+    if (isContinuous) {
+      if (!isBatchingHistoryRef.current) {
+        isBatchingHistoryRef.current = true;
+        batchStartSnapshotRef.current = { ...current };
+      }
+      if (historyDebounceTimerRef.current) {
+        clearTimeout(historyDebounceTimerRef.current);
+      }
+      historyDebounceTimerRef.current = setTimeout(() => {
+        if (batchStartSnapshotRef.current) {
+          commitHistorySnapshot(batchStartSnapshotRef.current);
+          batchStartSnapshotRef.current = null;
+        }
+        isBatchingHistoryRef.current = false;
+      }, 400);
+    } else {
+      if (historyDebounceTimerRef.current) {
+        clearTimeout(historyDebounceTimerRef.current);
+        historyDebounceTimerRef.current = null;
+      }
+      if (isBatchingHistoryRef.current && batchStartSnapshotRef.current) {
+        commitHistorySnapshot(batchStartSnapshotRef.current);
+        batchStartSnapshotRef.current = null;
+        isBatchingHistoryRef.current = false;
+      }
+      commitHistorySnapshot({ ...current });
+    }
+  }, [commitHistorySnapshot]);
+
+  const handleUndo = useCallback(() => {
+    if (historyDebounceTimerRef.current) {
+      clearTimeout(historyDebounceTimerRef.current);
+      historyDebounceTimerRef.current = null;
+      isBatchingHistoryRef.current = false;
+    }
+    setPast((prevPast) => {
+      if (prevPast.length === 0) return prevPast;
+      const previous = prevPast[prevPast.length - 1];
+      const newPast = prevPast.slice(0, prevPast.length - 1);
+
+      setFuture((prevFuture) => [{ ...stateRef.current }, ...prevFuture]);
+      setState({ ...previous, image: stateRef.current.image });
+      return newPast;
+    });
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    if (historyDebounceTimerRef.current) {
+      clearTimeout(historyDebounceTimerRef.current);
+      historyDebounceTimerRef.current = null;
+      isBatchingHistoryRef.current = false;
+    }
+    setFuture((prevFuture) => {
+      if (prevFuture.length === 0) return prevFuture;
+      const next = prevFuture[0];
+      const newFuture = prevFuture.slice(1);
+
+      setPast((prevPast) => [...prevPast, { ...stateRef.current }]);
+      setState({ ...next, image: stateRef.current.image });
+      return newFuture;
+    });
+  }, []);
+
+  // Global keyboard shortcuts for Undo (Ctrl+Z / Cmd+Z) and Redo (Ctrl+Y / Cmd+Shift+Z)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
+
   // Transient comparison interaction handlers
   const startComparison = useCallback(() => {
     if (state.image) {
@@ -179,6 +335,8 @@ export default function Home() {
   const handleImageLoaded = async (file: File) => {
     try {
       const img = await loadImage(file);
+      setPast([]);
+      setFuture([]);
       setState({
         ...INITIAL_STATE,
         image: img,
@@ -199,6 +357,30 @@ export default function Home() {
   };
 
   const handleStateChange = useCallback((updates: Partial<EditorState>) => {
+    const isContinuous = Boolean(
+      updates.zoom !== undefined ||
+      updates.positionX !== undefined ||
+      updates.positionY !== undefined ||
+      updates.contrast !== undefined ||
+      updates.saturation !== undefined ||
+      updates.temperature !== undefined ||
+      updates.highlights !== undefined ||
+      updates.shadows !== undefined ||
+      updates.grain !== undefined ||
+      updates.vignette !== undefined ||
+      updates.exposure !== undefined ||
+      updates.presetIntensity !== undefined ||
+      updates.textSize !== undefined ||
+      updates.textHorizontalPosition !== undefined ||
+      updates.textVerticalPosition !== undefined ||
+      updates.textOpacity !== undefined ||
+      updates.textBackgroundOpacity !== undefined ||
+      updates.textBackgroundRadius !== undefined ||
+      updates.textBackgroundPaddingX !== undefined ||
+      updates.textBackgroundPaddingY !== undefined
+    );
+    recordHistoryChange(isContinuous);
+
     setState((prev) => {
       const merged: EditorState = { ...INITIAL_STATE, ...prev, ...updates };
 
@@ -253,17 +435,19 @@ export default function Home() {
 
       return merged;
     });
-  }, []);
+  }, [recordHistoryChange]);
 
   const handlePanChange = useCallback((positionX: number, positionY: number) => {
+    recordHistoryChange(true);
     setState((prev) => ({
       ...prev,
       positionX,
       positionY,
     }));
-  }, []);
+  }, [recordHistoryChange]);
 
   const handleResetFraming = useCallback(() => {
+    recordHistoryChange(false);
     setState((prev) => ({
       ...prev,
       zoom: 1,
@@ -271,10 +455,11 @@ export default function Home() {
       positionY: 0,
       letterbox: false,
     }));
-  }, []);
+  }, [recordHistoryChange]);
 
   const handlePresetSelect = useCallback((preset: Preset) => {
     if (preset === 'CUSTOM') return;
+    recordHistoryChange(false);
     setState((prev) => {
       const intensity = prev.presetIntensity ?? 100;
       const values = applyPresetIntensity(CINEMATIC_PRESETS[preset].values, intensity);
@@ -284,9 +469,10 @@ export default function Home() {
         preset,
       };
     });
-  }, []);
+  }, [recordHistoryChange]);
 
   const handlePresetIntensityChange = useCallback((intensity: number) => {
+    recordHistoryChange(true);
     setState((prev) => {
       if (prev.preset === 'CUSTOM' || prev.preset === 'ORIGINAL') {
         return { ...prev, presetIntensity: intensity };
@@ -298,9 +484,10 @@ export default function Home() {
         presetIntensity: intensity,
       };
     });
-  }, []);
+  }, [recordHistoryChange]);
 
   const handleTemplateSelect = useCallback((templateId: TemplateId) => {
+    recordHistoryChange(false);
     setState((prev) => {
       const templateUpdates = applyTemplate(prev, templateId);
       return {
@@ -308,9 +495,10 @@ export default function Home() {
         ...templateUpdates,
       };
     });
-  }, []);
+  }, [recordHistoryChange]);
 
   const handleResetText = useCallback(() => {
+    recordHistoryChange(false);
     setState((prev) => ({
       ...prev,
       textType: 'subtitle',
@@ -331,15 +519,16 @@ export default function Home() {
       textBackgroundPaddingY: 8,
       template: undefined,
     }));
-  }, []);
+  }, [recordHistoryChange]);
 
   const handleResetTexture = useCallback(() => {
+    recordHistoryChange(false);
     setState((prev) => ({
       ...prev,
       grain: 0,
       vignette: 0,
     }));
-  }, []);
+  }, [recordHistoryChange]);
 
   const handleCurrentCategoryReset = useCallback(() => {
     switch (activeCategory) {
@@ -576,10 +765,15 @@ export default function Home() {
     { id: 'texto', label: 'Texto', icon: Type },
   ];
 
+  const containerHeightStyle = viewportHeight
+    ? { height: `${viewportHeight}px`, maxHeight: `${viewportHeight}px` }
+    : { height: '100dvh' };
+
   if (!isMounted) {
     return (
       <div 
-        className="h-screen h-[100dvh] bg-[#0A0A0B] text-[#EAE8E2] flex flex-col font-sans selection:bg-[#2A2A32] overflow-hidden"
+        style={containerHeightStyle}
+        className="w-full bg-[#0A0A0B] text-[#EAE8E2] flex flex-col font-sans selection:bg-[#2A2A32] overflow-hidden overscroll-none"
         suppressHydrationWarning
       />
     );
@@ -587,14 +781,15 @@ export default function Home() {
 
   return (
     <div 
-      className="h-screen h-[100dvh] bg-[#0A0A0B] text-[#EAE8E2] flex flex-col font-sans selection:bg-[#2A2A32] overflow-hidden"
+      style={containerHeightStyle}
+      className="w-full bg-[#0A0A0B] text-[#EAE8E2] flex flex-col font-sans selection:bg-[#2A2A32] overflow-hidden overscroll-none"
       suppressHydrationWarning
     >
       
       {/* ============================================================== */}
       {/* ZONE 1: EDITORIAL COMPACT HEADER                               */}
       {/* ============================================================== */}
-      <header className="h-13 sm:h-14 lg:h-16 shrink-0 border-b border-[#1F1F24] bg-[#0E0E10] px-3 sm:px-6 lg:px-8 flex items-center justify-between z-20">
+      <header className="h-12 sm:h-14 lg:h-16 shrink-0 border-b border-[#1F1F24] bg-[#0E0E10] px-3 sm:px-6 lg:px-8 flex items-center justify-between z-20">
         
         {/* Left: Brand Identity */}
         <div className="flex items-center gap-2.5">
@@ -646,6 +841,32 @@ export default function Home() {
         <div className="flex items-center gap-1.5 sm:gap-2">
           {state.image && (
             <>
+              {/* Acciones Deshacer y Rehacer */}
+              <div className="flex items-center gap-0.5 border-r border-[#232328] pr-1.5 sm:pr-2">
+                <button
+                  type="button"
+                  id="btn-undo"
+                  onClick={handleUndo}
+                  disabled={past.length === 0}
+                  className="h-8 w-8 rounded flex items-center justify-center text-[#9E9C96] hover:text-[#EAE8E2] hover:bg-[#18181D] disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-[#9E9C96] transition-colors cursor-pointer disabled:cursor-not-allowed"
+                  title="Deshacer (Ctrl+Z)"
+                  aria-label="Deshacer último cambio"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  id="btn-redo"
+                  onClick={handleRedo}
+                  disabled={future.length === 0}
+                  className="h-8 w-8 rounded flex items-center justify-center text-[#9E9C96] hover:text-[#EAE8E2] hover:bg-[#18181D] disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-[#9E9C96] transition-colors cursor-pointer disabled:cursor-not-allowed"
+                  title="Rehacer (Ctrl+Y)"
+                  aria-label="Rehacer último cambio"
+                >
+                  <Redo2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
               {/* Botón «Ver original» con soporte ratón, táctil y teclado */}
               <button
                 type="button"
@@ -827,29 +1048,94 @@ export default function Home() {
               />
             </aside>
 
-            {/* ZONE 3B: MOBILE BOTTOM EDITING SHEET & NAVIGATION */}
+            {/* ZONE 3B: MOBILE EDITING SECTION */}
             <section 
               aria-label="Zona de edición móvil"
               className="lg:hidden shrink-0 border-t border-[#232328] bg-[#0E0E10] flex flex-col z-30 transition-all duration-300 ease-in-out"
             >
-              {/* EXPANDABLE CONTROLS DRAWER */}
+              {/* CATEGORY NAVIGATION BAR (INTEGRATED AT TOP OF EDITING SECTION) */}
+              <nav
+                role="tablist"
+                aria-label="Categorías de edición cinematográfica"
+                className="shrink-0 border-b border-[#232328] bg-[#121215] select-none"
+                style={{
+                  paddingBottom: !isMobilePanelOpen ? 'max(env(safe-area-inset-bottom, 0px), 8px)' : '0px',
+                }}
+              >
+                <div className="h-12 flex items-center justify-between px-1.5 sm:px-2">
+                  <div className="flex-1 grid grid-cols-4 h-full">
+                    {CATEGORIES.map((cat) => {
+                      const Icon = cat.icon;
+                      const isActive = activeCategory === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          role="tab"
+                          id={`mobile-tab-${cat.id}`}
+                          aria-selected={isActive}
+                          aria-expanded={isActive && isMobilePanelOpen}
+                          aria-controls={`mobile-panel-${cat.id}`}
+                          onClick={() => handleMobileCategoryClick(cat.id)}
+                          className={`h-full flex flex-col items-center justify-center py-1 relative transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#D8C7A5] ${
+                            isActive
+                              ? 'text-[#EAE8E2] bg-[#16161A]'
+                              : 'text-[#8E8C86] hover:text-[#C5C3BD]'
+                          }`}
+                        >
+                          <div className="relative">
+                            <Icon className={`w-3.5 h-3.5 transition-colors ${isActive ? 'text-[#D8C7A5]' : 'text-[#706E69]'}`} />
+                            {isActive && (
+                              <span className="absolute -top-1 -right-2.5 w-1.5 h-1.5 rounded-full bg-[#D8C7A5]" />
+                            )}
+                          </div>
+                          <span className={`text-[10px] mt-0.5 tracking-wide ${isActive ? 'font-semibold text-[#EAE8E2]' : 'font-normal'}`}>
+                            {cat.label}
+                          </span>
+                          {isActive && (
+                            <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-[#D8C7A5]" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsMobilePanelOpen((prev) => !prev)}
+                    className="h-8 px-2 ml-1 rounded flex items-center gap-1 text-[11px] font-medium text-[#9E9C96] hover:text-[#EAE8E2] bg-[#18181D] border border-[#26262E] transition-colors shrink-0 cursor-pointer"
+                    title={isMobilePanelOpen ? "Ocultar panel de controles" : "Abrir panel de controles"}
+                    aria-label={isMobilePanelOpen ? "Ocultar panel" : "Abrir panel"}
+                  >
+                    {isMobilePanelOpen ? (
+                      <>
+                        <ChevronDown className="w-3.5 h-3.5 text-[#D8C7A5]" />
+                        <span className="text-[10px]">Ocultar</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronUp className="w-3.5 h-3.5 text-[#D8C7A5]" />
+                        <span className="text-[10px]">Editar</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </nav>
+
+              {/* EXPANDABLE CONTROLS DRAWER (DIRECTLY BELOW CATEGORY NAVIGATION) */}
               {isMobilePanelOpen && (
-                <div className="h-[44dvh] max-h-[48dvh] flex flex-col overflow-hidden border-b border-[#1F1F24]">
+                <div 
+                  className="h-[42dvh] max-h-[46dvh] flex flex-col overflow-hidden bg-[#0E0E10]"
+                  style={{
+                    height: viewportHeight ? `${Math.min(Math.round(viewportHeight * 0.44), 360)}px` : undefined,
+                  }}
+                >
                   {/* Category Sub-Header */}
-                  <div className="h-10 px-3 sm:px-4 border-b border-[#232328] bg-[#121215] flex items-center justify-between shrink-0">
+                  <div className="h-9 px-3 sm:px-4 border-b border-[#232328] bg-[#121215] flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-2">
-                      {(() => {
-                        const currentCat = CATEGORIES.find((c) => c.id === activeCategory);
-                        const Icon = currentCat?.icon ?? Crop;
-                        return (
-                          <>
-                            <Icon className="w-3.5 h-3.5 text-[#D8C7A5]" />
-                            <span className="text-xs font-semibold tracking-wide text-[#EAE8E2]">
-                              {currentCat?.label}
-                            </span>
-                          </>
-                        );
-                      })()}
+                      <span className="text-[11px] font-semibold tracking-wide text-[#EAE8E2]">
+                        {CATEGORIES.find((c) => c.id === activeCategory)?.label}
+                      </span>
                       {activeCategory === 'color' && state.preset !== 'ORIGINAL' && (
                         <span className="text-[10px] text-[#D8C7A5] font-mono bg-[#1E1E24] px-1.5 py-0.5 rounded border border-[#2B2B34]">
                           {getPresetDisplayName(state.preset)}
@@ -866,21 +1152,11 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={handleCurrentCategoryReset}
-                        className="text-[11px] text-[#9E9C96] hover:text-[#EAE8E2] px-2 py-1 rounded transition-colors flex items-center gap-1 cursor-pointer"
+                        className="text-[11px] text-[#9E9C96] hover:text-[#EAE8E2] px-2 py-0.5 rounded transition-colors flex items-center gap-1 cursor-pointer"
                         title="Restablecer ajustes de esta sección"
                       >
-                        <RotateCcw className="w-3 h-3" />
+                        <RotateCcw className="w-3 h-3 text-[#D8C7A5]" />
                         <span>Restablecer</span>
-                      </button>
-                      
-                      <button
-                        type="button"
-                        onClick={() => setIsMobilePanelOpen(false)}
-                        className="text-[11px] text-[#9E9C96] hover:text-[#EAE8E2] px-2 py-1 rounded bg-[#18181D] border border-[#26262E] transition-colors flex items-center gap-1 cursor-pointer"
-                        title="Contraer panel para ver la imagen completa"
-                      >
-                        <ChevronDown className="w-3.5 h-3.5 text-[#D8C7A5]" />
-                        <span className="text-[10px]">Ocultar</span>
                       </button>
                     </div>
                   </div>
@@ -908,51 +1184,6 @@ export default function Home() {
                   </div>
                 </div>
               )}
-
-              {/* DOCKED BOTTOM CATEGORY NAVIGATION BAR */}
-              <nav
-                role="tablist"
-                aria-label="Categorías de edición cinematográfica"
-                className="shrink-0 border-t border-[#232328] bg-[#121215] select-none"
-                style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-              >
-                <div className="h-13 grid grid-cols-4 items-center">
-                  {CATEGORIES.map((cat) => {
-                    const Icon = cat.icon;
-                    const isActive = activeCategory === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        role="tab"
-                        id={`mobile-tab-${cat.id}`}
-                        aria-selected={isActive}
-                        aria-expanded={isActive && isMobilePanelOpen}
-                        aria-controls={`mobile-panel-${cat.id}`}
-                        onClick={() => handleMobileCategoryClick(cat.id)}
-                        className={`h-full flex flex-col items-center justify-center py-1.5 relative transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#D8C7A5] ${
-                          isActive
-                            ? 'text-[#EAE8E2] bg-[#16161A]'
-                            : 'text-[#8E8C86] hover:text-[#C5C3BD]'
-                        }`}
-                      >
-                        <div className="relative">
-                          <Icon className={`w-4 h-4 transition-colors ${isActive ? 'text-[#D8C7A5]' : 'text-[#706E69]'}`} />
-                          {isActive && (
-                            <span className="absolute -top-1 -right-2.5 w-1.5 h-1.5 rounded-full bg-[#D8C7A5]" />
-                          )}
-                        </div>
-                        <span className={`text-[10px] mt-0.5 tracking-wide ${isActive ? 'font-semibold text-[#EAE8E2]' : 'font-normal'}`}>
-                          {cat.label}
-                        </span>
-                        {isActive && (
-                          <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-[#D8C7A5]" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </nav>
             </section>
           </>
         )}

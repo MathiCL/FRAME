@@ -16,15 +16,15 @@ export const FONT_STACKS: Record<TextFont, { label: string; family: string }> = 
     family: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
   },
   'type-machine': {
-    label: 'Type Machine',
-    family: '"Type Machine", "Special Elite", "Courier New", monospace',
+    label: 'Máquina Clásica',
+    family: '"Special Elite", "Courier New", monospace',
   },
   'elegant-typewriter': {
     label: 'Elegant Typewriter',
-    family: '"Elegant Typewriter", "Courier Prime", "Cutive Mono", monospace',
+    family: '"Courier Prime", "Courier New", Courier, monospace',
   },
   'courier-prime': {
-    label: 'Máquina Clásica',
+    label: 'Courier Prime',
     family: '"Courier Prime", "Courier New", Courier, monospace',
   },
   montserrat: {

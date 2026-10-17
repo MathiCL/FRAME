@@ -91,10 +91,9 @@ function TemplateThumbnail({ id }: { id: TemplateId }) {
 }
 
 const FONT_OPTIONS: Array<{ id: TextFont; label: string; subtitle: string }> = [
-  { id: 'type-machine', label: 'Type Machine', subtitle: 'Mecanografía vintage' },
-  { id: 'elegant-typewriter', label: 'Elegant Typewriter', subtitle: 'Mecanografía fina' },
-  { id: 'courier-prime', label: 'Máquina Clásica', subtitle: 'Guion de cine' },
-  { id: 'montserrat', label: 'Editorial Sans', subtitle: 'Sans limpia' },
+  { id: 'type-machine', label: 'Máquina Clásica', subtitle: 'Tinta irregular vintage' },
+  { id: 'elegant-typewriter', label: 'Elegant Typewriter', subtitle: 'Guion cinematográfico' },
+  { id: 'montserrat', label: 'Editorial Sans', subtitle: 'Sans geométrica' },
   { id: 'serif', label: 'Serif Editorial', subtitle: 'Clásica literaria' },
   { id: 'sans', label: 'Sans Cine', subtitle: 'Subtítulo moderno' },
   { id: 'mono', label: 'Monospace', subtitle: 'Teletexto técnico' },
@@ -202,7 +201,10 @@ export function Controls({
       )}
 
       {/* TAB CONTENT AREA */}
-      <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 sm:py-6 overscroll-contain">
+      <div 
+        className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 sm:py-6 overscroll-contain"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 24px)' }}
+      >
         
         {/* ============================================================== */}
         {/* TAB 1: ENCUADRE                                                */}
@@ -979,7 +981,9 @@ export function Controls({
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                       {FONT_OPTIONS.map((font) => {
-                        const isSelected = state.textFont === font.id;
+                        const isSelected =
+                          state.textFont === font.id ||
+                          (font.id === 'elegant-typewriter' && state.textFont === 'courier-prime');
                         return (
                           <button
                             key={font.id}
