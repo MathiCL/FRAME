@@ -1,5 +1,5 @@
 import { EditorState } from '@/types/editor';
-import { computeFrameLayout, computeImageRect } from '@/lib/geometry';
+import { computeFrameLayout, computeImageRect, type Rect } from '@/lib/geometry';
 import { 
   renderCinematicText, 
   renderCinematicTimestamp, 
@@ -170,6 +170,9 @@ export function renderCinematicFrame({ state, canvas, showOriginal = false }: Re
     ctx.putImageData(imgData, area.x, area.y);
   }
 
+  // --- 2.5. CINEMATIC GLOW (Resplandor de luces & Halation) ---
+  renderCinematicGlow(ctx, area, state);
+
   // --- 3. GRAIN ---
   if (state.grain > 0) {
     ctx.globalCompositeOperation = 'overlay';
@@ -217,6 +220,120 @@ export function renderCinematicFrame({ state, canvas, showOriginal = false }: Re
   // --- 8. FILM CREDITS (Créditos de película personalizados) ---
   renderCinematicCredits(ctx, area, state);
 }
+
+/**
+ * Renders optical cinematic glow / halation around scene highlights.
+ * Selectively extracts high-luminance pixels, tints them with chosen tone,
+ * blurs via an optimized intermediate buffer, and blends using 'screen'.
+ */
+export function renderCinematicGlow(
+  ctx: CanvasRenderingContext2D,
+  area: Rect,
+  state: EditorState,
+) {
+  if (!state.glowEnabled || !state.glowIntensity || state.glowIntensity <= 0) {
+    return;
+  }
+  if (typeof document === 'undefined') return;
+
+  try {
+    const intensity = Math.min(100, Math.max(0, state.glowIntensity));
+    const rawRadius = state.glowRadius ?? 24;
+    const tone = state.glowTone ?? 'warm';
+
+    // Downscale factor to ensure silky smooth performance even on 4K/8K captures
+    const maxDimension = 640;
+    const currentMax = Math.max(area.width, area.height);
+    const downscale = Math.max(1, currentMax / maxDimension);
+
+    const dw = Math.max(16, Math.round(area.width / downscale));
+    const dh = Math.max(16, Math.round(area.height / downscale));
+
+    const extractCanvas = document.createElement('canvas');
+    extractCanvas.width = dw;
+    extractCanvas.height = dh;
+    const extractCtx = extractCanvas.getContext('2d');
+    if (!extractCtx) return;
+
+    // Draw current image area scaled down
+    extractCtx.drawImage(ctx.canvas, area.x, area.y, area.width, area.height, 0, 0, dw, dh);
+
+    // Extract highlight pixels with a smooth knee threshold
+    const imgData = extractCtx.getImageData(0, 0, dw, dh);
+    const data = imgData.data;
+
+    // Threshold: only lights above ~165 begin to glow
+    const threshold = 165;
+    const thresholdRange = 255 - threshold;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+
+      if (luma <= threshold) {
+        // Cut out shadows and midtones completely - zero fog in dark areas!
+        data[i + 3] = 0;
+      } else {
+        // Quadratic knee for soft organic light transition
+        const factor = Math.min(1, Math.max(0, (luma - threshold) / thresholdRange));
+        const alphaWeight = factor * factor;
+
+        if (tone === 'warm') {
+          // Warm amber / incandescent / streetlamp glow
+          data[i] = Math.min(255, r * 1.25 + 30);
+          data[i + 1] = Math.min(255, g * 1.1 + 10);
+          data[i + 2] = Math.max(0, b * 0.65 - 15);
+        } else if (tone === 'red') {
+          // Filmic red halation (Cinestill 800T red rim around bright highlights)
+          data[i] = Math.min(255, r * 1.35 + 40);
+          data[i + 1] = Math.max(0, g * 0.5 - 15);
+          data[i + 2] = Math.max(0, b * 0.45 - 20);
+        } else {
+          // Neutral optical diffusion
+          data[i] = r;
+          data[i + 1] = g;
+          data[i + 2] = b;
+        }
+
+        data[i + 3] = Math.round(alphaWeight * 255);
+      }
+    }
+
+    extractCtx.putImageData(imgData, 0, 0);
+
+    // Create blurred diffusion layer
+    const blurCanvas = document.createElement('canvas');
+    blurCanvas.width = dw;
+    blurCanvas.height = dh;
+    const blurCtx = blurCanvas.getContext('2d');
+    if (!blurCtx) return;
+
+    const blurRadius = Math.max(4, Math.round((rawRadius / downscale) * 1.6));
+
+    const ctxWithFilter = blurCtx as unknown as { filter?: string };
+    if (typeof ctxWithFilter.filter === 'string') {
+      blurCtx.filter = `blur(${blurRadius}px)`;
+    }
+    blurCtx.drawImage(extractCanvas, 0, 0);
+    if (typeof ctxWithFilter.filter === 'string') {
+      blurCtx.filter = 'none';
+    }
+
+    // Composite back with screen blending mode
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    const blendAlpha = (intensity / 100) * 0.72;
+    ctx.globalAlpha = blendAlpha;
+    ctx.drawImage(blurCanvas, area.x, area.y, area.width, area.height);
+    ctx.restore();
+  } catch {
+    // Graceful fallback for non-browser / mock contexts
+  }
+}
+
 
 export interface ExportResult {
   success: boolean;

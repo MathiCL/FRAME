@@ -98,12 +98,46 @@ export interface EditorState {
   creditOpacity?: number;
   creditFont?: TextFont;
 
+  // --- Resplandor de luces (Bloom / Halation) ---
+  glowEnabled?: boolean;
+  glowIntensity?: number; // 0..100 (%)
+  glowRadius?: number; // 8..60 px
+  glowTone?: GlowTone;
+
   // --- Bordes de película analógica ---
   borderEnabled?: boolean;
   borderStyle?: BorderStyle;
   borderWidth?: number; // 2..10 (%)
   borderColor?: string;
   borderOpacity?: number; // 20..100 (%)
+}
+
+/** Tonalidades ópticas para el resplandor de luces */
+export type GlowTone = 'neutral' | 'warm' | 'red';
+
+/** Estructura de propuesta creativa para «Sorpréndeme» */
+export interface CreativeProposal {
+  id: string;
+  name: string;
+  badge: string;
+  description: string;
+  settings: Partial<Pick<
+    EditorState,
+    | 'preset'
+    | 'presetIntensity'
+    | 'exposure'
+    | 'contrast'
+    | 'saturation'
+    | 'temperature'
+    | 'highlights'
+    | 'shadows'
+    | 'grain'
+    | 'vignette'
+    | 'glowEnabled'
+    | 'glowIntensity'
+    | 'glowRadius'
+    | 'glowTone'
+  >>;
 }
 
 /** Preajustes rápidos de marcas de tiempo */

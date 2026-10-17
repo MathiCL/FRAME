@@ -23,7 +23,8 @@ import {
   AspectFormat,
   BorderStyle,
   TimestampPosition,
-  CreditPosition
+  CreditPosition,
+  GlowTone
 } from '@/types/editor';
 import { ASPECT_FORMATS, computeFrameLayout, getPanBounds } from '@/lib/geometry';
 import { 
@@ -836,6 +837,125 @@ export function Controls({
               </div>
             </div>
 
+            {/* Resplandor de Luces (Bloom / Halation) */}
+            <div className="space-y-4 pt-3 border-t border-[#1F1F24]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#9E9C96] block">
+                    Resplandor de Luces
+                  </span>
+                  <span className="text-[10px] text-[#686662]">
+                    Halo óptico en altas luces y halation analógico
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  id="glow-toggle"
+                  aria-checked={state.glowEnabled ?? false}
+                  onClick={() => onChange({ 
+                    glowEnabled: !(state.glowEnabled ?? false),
+                    glowIntensity: (state.glowIntensity ?? 0) === 0 ? 30 : state.glowIntensity,
+                    glowRadius: state.glowRadius ?? 24,
+                    glowTone: state.glowTone ?? 'warm',
+                  })}
+                  className={`h-7 px-3 rounded-md border text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                    (state.glowEnabled ?? false)
+                      ? 'bg-[#18181D] border-[#D8C7A5]/70 text-[#EAE8E2]'
+                      : 'bg-[#121215] border-[#232328] text-[#9E9C96] hover:text-[#EAE8E2]'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${
+                    (state.glowEnabled ?? false) ? 'bg-[#D8C7A5]' : 'bg-[#404048]'
+                  }`} />
+                  <span>{(state.glowEnabled ?? false) ? 'Activado' : 'Desactivado'}</span>
+                </button>
+              </div>
+
+              {(state.glowEnabled ?? false) && (
+                <div className="space-y-4 pt-1 animate-in fade-in duration-150">
+                  {/* Tonalidad del resplandor: Cálido / Rojizo / Neutro */}
+                  <div className="space-y-1.5">
+                    <span className="text-xs text-[#9E9C96]">Tonalidad del Halo</span>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 'warm', label: 'Cálido', sub: 'Tungsteno / Ámbar' },
+                        { id: 'red', label: 'Rojizo', sub: 'Halation 35mm' },
+                        { id: 'neutral', label: 'Neutro', sub: 'Difusión blanca' },
+                      ].map((t) => {
+                        const isSelected = (state.glowTone ?? 'warm') === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => onChange({ glowTone: t.id as GlowTone })}
+                            className={`py-2 px-2 rounded-md border text-center transition-all cursor-pointer flex flex-col items-center justify-center ${
+                              isSelected
+                                ? 'bg-[#EAE8E2] text-[#0A0A0B] border-[#EAE8E2] font-semibold shadow-sm'
+                                : 'bg-[#141417] text-[#9E9C96] border-[#232328] hover:text-[#EAE8E2] hover:border-[#383842]'
+                            }`}
+                          >
+                            <span className="text-[11px] tracking-wide">{t.label}</span>
+                            <span className={`text-[9px] mt-0.5 ${isSelected ? 'text-[#3E3C36]' : 'text-[#686662]'}`}>
+                              {t.sub}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Intensidad del resplandor (0..100) */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#9E9C96]">Intensidad del halo</span>
+                      <span className="font-mono text-[#D8C7A5]">{state.glowIntensity ?? 25}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      aria-label="Intensidad del resplandor de luces"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={state.glowIntensity ?? 25}
+                      onChange={(e) => onChange({ glowIntensity: Number(e.target.value) })}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between items-center text-[10px] text-[#686662] font-mono">
+                      <span>0% Sutil</span>
+                      <span className="text-[#9E9C96]">
+                        {(state.glowIntensity ?? 25) < 30 ? 'Atmósfera sutil' : (state.glowIntensity ?? 25) < 60 ? 'Cinematográfico' : 'Halo pronunciado'}
+                      </span>
+                      <span>100% Intenso</span>
+                    </div>
+                  </div>
+
+                  {/* Radio / Tamaño del resplandor (8..60 px) */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#9E9C96]">Radio de dispersión</span>
+                      <span className="font-mono text-[#D8C7A5]">{state.glowRadius ?? 24} px</span>
+                    </div>
+                    <input
+                      type="range"
+                      aria-label="Radio de dispersión del resplandor"
+                      min="8"
+                      max="60"
+                      step="1"
+                      value={state.glowRadius ?? 24}
+                      onChange={(e) => onChange({ glowRadius: Number(e.target.value) })}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-[10px] text-[#686662] font-mono">
+                      <span>8 px Concentrado</span>
+                      <span>24 px Equilibrado</span>
+                      <span>60 px Difuso</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Analog Film Borders */}
             <div className="space-y-4 pt-3 border-t border-[#1F1F24]">
               <div className="flex items-center justify-between">
@@ -1027,11 +1147,20 @@ export function Controls({
             <div className="pt-2">
               <button
                 type="button"
-                onClick={onResetTexture ?? (() => onChange({ grain: 0, vignette: 0, borderEnabled: false, borderStyle: 'none' }))}
+                onClick={onResetTexture ?? (() => onChange({ 
+                  grain: 0, 
+                  vignette: 0, 
+                  glowEnabled: false, 
+                  glowIntensity: 25, 
+                  glowRadius: 24, 
+                  glowTone: 'warm', 
+                  borderEnabled: false, 
+                  borderStyle: 'none' 
+                }))}
                 className="w-full py-2 px-3 rounded-md border border-[#232328] bg-[#121215] text-[#9E9C96] hover:text-[#EAE8E2] hover:border-[#35353C] text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                Restablecer textura y marcos a inicial
+                Restablecer textura, resplandor y marcos a inicial
               </button>
             </div>
           </div>

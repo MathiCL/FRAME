@@ -26,7 +26,9 @@ import { ImageUploader } from '@/components/ImageUploader';
 import { CinemaCanvas } from '@/components/CinemaCanvas';
 import { Controls, TabKey } from '@/components/Controls';
 import { loadImage } from '@/utils/image';
-import { EditorState, Preset, TemplateId } from '@/types/editor';
+import { SurpriseModal } from '@/components/SurpriseModal';
+import { applyProposalSettings } from '@/lib/surprise';
+import { EditorState, Preset, TemplateId, CreativeProposal } from '@/types/editor';
 import { exportCanvasAsImage, renderCinematicFrame } from '@/lib/canvas';
 import { computeFrameLayout, getPanBounds, clampPosition } from '@/lib/geometry';
 import {
@@ -108,6 +110,12 @@ const INITIAL_STATE: EditorState = {
   creditOpacity: 85,
   creditFont: 'montserrat',
 
+  // --- Resplandor de luces ---
+  glowEnabled: false,
+  glowIntensity: 25,
+  glowRadius: 24,
+  glowTone: 'warm',
+
   // --- Bordes de película analógica ---
   borderEnabled: false,
   borderStyle: 'none',
@@ -142,6 +150,10 @@ export default function Home() {
   const newImageInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [imageLoadError, setImageLoadError] = useState<string | null>(null);
+
+  // --- SORPRÉNDEME STATE & REFS ---
+  const [isSurpriseOpen, setIsSurpriseOpen] = useState(false);
+  const originalSettingsBeforePreview = useRef<EditorState | null>(null);
 
   // --- REAL VISIBLE VIEWPORT TRACKING FOR IOS SAFARI ---
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
@@ -457,7 +469,9 @@ export default function Home() {
       updates.creditSize !== undefined ||
       updates.creditOpacity !== undefined ||
       updates.borderWidth !== undefined ||
-      updates.borderOpacity !== undefined
+      updates.borderOpacity !== undefined ||
+      updates.glowIntensity !== undefined ||
+      updates.glowRadius !== undefined
     );
     recordHistoryChange(isContinuous);
 
@@ -482,7 +496,11 @@ export default function Home() {
         updates.highlights !== undefined ||
         updates.shadows !== undefined ||
         updates.grain !== undefined ||
-        updates.vignette !== undefined
+        updates.vignette !== undefined ||
+        updates.glowEnabled !== undefined ||
+        updates.glowIntensity !== undefined ||
+        updates.glowRadius !== undefined ||
+        updates.glowTone !== undefined
       ) {
         if (updates.preset === undefined && updates.presetIntensity === undefined) {
           merged.preset = 'CUSTOM';
@@ -609,10 +627,45 @@ export default function Home() {
       ...prev,
       grain: 0,
       vignette: 0,
+      glowEnabled: false,
+      glowIntensity: 25,
+      glowRadius: 24,
+      glowTone: 'warm',
       borderEnabled: false,
       borderStyle: 'none',
     }));
   }, [recordHistoryChange]);
+
+  // --- SORPRÉNDEME LOGIC ---
+  const handleOpenSurpriseMe = useCallback(() => {
+    if (!state.image) return;
+    originalSettingsBeforePreview.current = { ...state };
+    setIsSurpriseOpen(true);
+  }, [state]);
+
+  const handlePreviewProposal = useCallback((proposal: CreativeProposal) => {
+    setState((prev) => applyProposalSettings(prev, proposal));
+  }, []);
+
+  const handleRevertPreview = useCallback(() => {
+    if (originalSettingsBeforePreview.current) {
+      setState(originalSettingsBeforePreview.current);
+    }
+  }, []);
+
+  const handleApplyProposal = useCallback((proposal: CreativeProposal) => {
+    recordHistoryChange(false);
+    const base = originalSettingsBeforePreview.current ?? state;
+    setState(applyProposalSettings(base, proposal));
+    originalSettingsBeforePreview.current = null;
+    setIsSurpriseOpen(false);
+  }, [recordHistoryChange, state]);
+
+  const handleCloseSurpriseModal = useCallback(() => {
+    handleRevertPreview();
+    originalSettingsBeforePreview.current = null;
+    setIsSurpriseOpen(false);
+  }, [handleRevertPreview]);
 
   const handleCurrentCategoryReset = useCallback(() => {
     switch (activeCategory) {
@@ -983,6 +1036,19 @@ export default function Home() {
                 <span className="sm:hidden tracking-wide text-[11px]">
                   {isComparing ? 'Original…' : 'Original'}
                 </span>
+              </button>
+
+              {/* Botón «Sorpréndeme» */}
+              <button
+                type="button"
+                id="btn-sorprendeme"
+                onClick={handleOpenSurpriseMe}
+                className="h-8 sm:h-9 px-2.5 sm:px-3 text-xs font-medium bg-[#1A1813] hover:bg-[#25221B] text-[#D8C7A5] border border-[#3E382A] hover:border-[#D8C7A5]/60 hover:text-white rounded-md transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Proponer 3 visiones creativas combinando estilos y resplandor"
+                aria-label="Sorpréndeme con 3 propuestas cinematográficas"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#D8C7A5]" />
+                <span className="tracking-wide">Sorpréndeme</span>
               </button>
 
               {/* Nueva Imagen */}
@@ -1503,6 +1569,20 @@ export default function Home() {
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: SORPRÉNDEME (PROPUESTAS CREATIVAS CINEMATOGRÁFICAS)     */}
+      {/* ============================================================== */}
+      {isSurpriseOpen && (
+        <SurpriseModal
+          isOpen={isSurpriseOpen}
+          onClose={handleCloseSurpriseModal}
+          currentState={originalSettingsBeforePreview.current ?? state}
+          onApplyProposal={handleApplyProposal}
+          onPreviewProposal={handlePreviewProposal}
+          onRevertPreview={handleRevertPreview}
+        />
       )}
 
     </div>
