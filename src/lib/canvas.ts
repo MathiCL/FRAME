@@ -1,6 +1,11 @@
 import { EditorState } from '@/types/editor';
 import { computeFrameLayout, computeImageRect } from '@/lib/geometry';
-import { renderCinematicText } from '@/lib/typography';
+import { 
+  renderCinematicText, 
+  renderCinematicTimestamp, 
+  renderCinematicCredits 
+} from '@/lib/typography';
+import { renderCinematicBorders } from '@/lib/borders';
 
 interface RenderOptions {
   state: EditorState;
@@ -199,9 +204,18 @@ export function renderCinematicFrame({ state, canvas, showOriginal = false }: Re
 
   ctx.restore();
 
-  // --- 5. CINEMATIC TYPOGRAPHY (Quote & Subtitle Engine) ---
+  // --- 5. ANALOG FILM BORDERS ---
+  renderCinematicBorders(ctx, area, state);
+
+  // --- 6. CINEMATIC TYPOGRAPHY (Quote & Subtitle Engine) ---
   ctx.globalCompositeOperation = 'source-over';
   renderCinematicText(ctx, area, state);
+
+  // --- 7. CINEMATIC TIMESTAMPS (Marcas de tiempo / Detalles) ---
+  renderCinematicTimestamp(ctx, area, state);
+
+  // --- 8. FILM CREDITS (Créditos de película personalizados) ---
+  renderCinematicCredits(ctx, area, state);
 }
 
 export interface ExportResult {

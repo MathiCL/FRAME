@@ -75,7 +75,51 @@ export interface EditorState {
 
   // --- Composition Templates ---
   template?: TemplateId;
+
+  // --- Marcas de tiempo cinematográficas ---
+  timestampEnabled?: boolean;
+  timestampText?: string;
+  timestampPreset?: TimestampPresetId;
+  timestampPosition?: TimestampPosition;
+  timestampSize?: number;
+  timestampColor?: string;
+  timestampOpacity?: number;
+  timestampFont?: TextFont;
+
+  // --- Créditos cinematográficos ---
+  creditEnabled?: boolean;
+  creditRole?: string;
+  creditName?: string;
+  creditPreset?: CreditPresetId;
+  creditPosition?: CreditPosition;
+  creditAlign?: TextAlign;
+  creditSize?: number;
+  creditColor?: string;
+  creditOpacity?: number;
+  creditFont?: TextFont;
+
+  // --- Bordes de película analógica ---
+  borderEnabled?: boolean;
+  borderStyle?: BorderStyle;
+  borderWidth?: number; // 2..10 (%)
+  borderColor?: string;
+  borderOpacity?: number; // 20..100 (%)
 }
+
+/** Preajustes rápidos de marcas de tiempo */
+export type TimestampPresetId = 'analog-date' | 'digital-time' | 'scene-take' | 'film-gauge' | 'custom';
+
+/** Esquinas y anclajes para marcas de tiempo */
+export type TimestampPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+
+/** Preajustes de composiciones de créditos */
+export type CreditPresetId = 'film-by' | 'directed-by' | 'starring' | 'memory' | 'custom';
+
+/** Posiciones de créditos en el fotograma */
+export type CreditPosition = 'bottom-center' | 'top-center' | 'bottom-left' | 'bottom-right' | 'top-left';
+
+/** Estilos de bordes y marcos de película */
+export type BorderStyle = 'none' | 'negative-35mm' | 'film-gate' | 'vintage-print' | 'minimal-wire';
 
 export type TemplateId =
   | 'THE_QUOTE'

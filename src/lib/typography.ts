@@ -1,4 +1,12 @@
-import type { EditorState, TextFont } from '@/types/editor';
+import type { 
+  EditorState, 
+  TextFont, 
+  TextAlign,
+  TimestampPresetId, 
+  TimestampPosition, 
+  CreditPresetId, 
+  CreditPosition 
+} from '@/types/editor';
 import type { Rect } from '@/lib/geometry';
 
 /** Reliable typography stacks with standard font names recognized by HTML5 Canvas */
@@ -494,6 +502,261 @@ export function renderCinematicText(
       }
       currentY += layout.authorLineHeight;
     }
+  }
+
+  ctx.restore();
+}
+
+/** Preajustes cinematográficos para marcas de tiempo */
+export const TIMESTAMP_PRESETS: ReadonlyArray<{
+  id: TimestampPresetId;
+  label: string;
+  example: string;
+  defaultText: string;
+  defaultFont: TextFont;
+  defaultColor: string;
+  defaultPosition: TimestampPosition;
+}> = [
+  {
+    id: 'analog-date',
+    label: 'Fecha analógica',
+    example: 'OCT. 1998',
+    defaultText: 'OCT. 1998',
+    defaultFont: 'mono',
+    defaultColor: '#F97316',
+    defaultPosition: 'bottom-right',
+  },
+  {
+    id: 'digital-time',
+    label: 'Hora digital',
+    example: '23:47',
+    defaultText: '23:47',
+    defaultFont: 'mono',
+    defaultColor: '#F4EFE6',
+    defaultPosition: 'bottom-left',
+  },
+  {
+    id: 'scene-take',
+    label: 'Código de escena',
+    example: 'ESCENA 04 · TOMA 02',
+    defaultText: 'ESCENA 04 · TOMA 02',
+    defaultFont: 'sans',
+    defaultColor: '#D8C7A5',
+    defaultPosition: 'top-left',
+  },
+  {
+    id: 'film-gauge',
+    label: 'Calibre 35mm',
+    example: '35 MM · FRAME 24',
+    defaultText: '35 MM · FRAME 24',
+    defaultFont: 'montserrat',
+    defaultColor: '#EAE8E2',
+    defaultPosition: 'top-right',
+  },
+];
+
+/** Preajustes cinematográficos para créditos */
+export const CREDIT_PRESETS: ReadonlyArray<{
+  id: CreditPresetId;
+  label: string;
+  example: string;
+  defaultRole: string;
+  defaultName: string;
+  defaultFont: TextFont;
+  defaultPosition: CreditPosition;
+  defaultAlign: TextAlign;
+}> = [
+  {
+    id: 'film-by',
+    label: 'A Film By',
+    example: 'A FILM BY / SOFÍA COPPOLA',
+    defaultRole: 'A FILM BY',
+    defaultName: 'SOFÍA COPPOLA',
+    defaultFont: 'montserrat',
+    defaultPosition: 'bottom-center',
+    defaultAlign: 'center',
+  },
+  {
+    id: 'directed-by',
+    label: 'Directed By',
+    example: 'DIRECTED BY / WONG KAR-WAI',
+    defaultRole: 'DIRECTED BY',
+    defaultName: 'WONG KAR-WAI',
+    defaultFont: 'sans',
+    defaultPosition: 'bottom-center',
+    defaultAlign: 'center',
+  },
+  {
+    id: 'starring',
+    label: 'Starring',
+    example: 'STARRING / TONY LEUNG',
+    defaultRole: 'STARRING',
+    defaultName: 'TONY LEUNG',
+    defaultFont: 'serif',
+    defaultPosition: 'bottom-center',
+    defaultAlign: 'center',
+  },
+  {
+    id: 'memory',
+    label: 'True Memory',
+    example: 'BASED ON / A TRUE MEMORY',
+    defaultRole: 'BASED ON',
+    defaultName: 'A TRUE MEMORY',
+    defaultFont: 'elegant-typewriter',
+    defaultPosition: 'bottom-center',
+    defaultAlign: 'center',
+  },
+];
+
+/**
+ * Renderiza marcas de tiempo analógicas y digitales discretas en el fotograma
+ */
+export function renderCinematicTimestamp(
+  ctx: CanvasRenderingContext2D,
+  area: Rect,
+  state: EditorState,
+) {
+  if (!state.timestampEnabled || !state.timestampText?.trim()) return;
+
+  const text = state.timestampText.trim();
+  const position = state.timestampPosition ?? 'bottom-right';
+  const hasBorder = Boolean(state.borderEnabled && state.borderStyle && state.borderStyle !== 'none');
+  const baseDim = Math.min(area.width, area.height);
+  const margin = Math.round(baseDim * (hasBorder ? 0.08 : 0.05));
+
+  const userScale = state.timestampSize ?? 20;
+  const fontSize = Math.max(11, Math.round((baseDim * userScale) / 850));
+  const fontStack = FONT_STACKS[state.timestampFont ?? 'mono']?.family || FONT_STACKS.mono.family;
+  const color = state.timestampColor || '#F97316';
+  const opacity = Math.max(15, Math.min(100, state.timestampOpacity ?? 85)) / 100;
+
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.font = `600 ${fontSize}px ${fontStack}`;
+  ctx.fillStyle = color;
+
+  // Brillo o sombra según tonalidad
+  const isAmber = color.toLowerCase().includes('f97316') || color.toLowerCase().includes('f59e0b') || color.toLowerCase().includes('orange');
+  if (isAmber) {
+    ctx.shadowColor = 'rgba(249, 115, 22, 0.5)';
+    ctx.shadowBlur = Math.max(2, Math.round(fontSize * 0.35));
+  } else {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+    ctx.shadowBlur = Math.max(2, Math.round(fontSize * 0.25));
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 1;
+  }
+
+  let x: number;
+  let y: number;
+
+  switch (position) {
+    case 'top-left':
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      x = area.x + margin;
+      y = area.y + margin;
+      break;
+    case 'top-right':
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      x = area.x + area.width - margin;
+      y = area.y + margin;
+      break;
+    case 'bottom-left':
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      x = area.x + margin;
+      y = area.y + area.height - margin;
+      break;
+    case 'bottom-right':
+    default:
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      x = area.x + area.width - margin;
+      y = area.y + area.height - margin;
+      break;
+  }
+
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+/**
+ * Renderiza créditos cinematográficos con jerarquía editorial (rol y nombre)
+ */
+export function renderCinematicCredits(
+  ctx: CanvasRenderingContext2D,
+  area: Rect,
+  state: EditorState,
+) {
+  if (!state.creditEnabled) return;
+
+  const role = state.creditRole?.trim() ?? '';
+  const name = state.creditName?.trim() ?? '';
+  if (!role && !name) return;
+
+  const position = state.creditPosition ?? 'bottom-center';
+  const align = state.creditAlign ?? 'center';
+  const hasBorder = Boolean(state.borderEnabled && state.borderStyle && state.borderStyle !== 'none');
+  const baseDim = Math.min(area.width, area.height);
+  const margin = Math.round(baseDim * (hasBorder ? 0.085 : 0.06));
+
+  const userScale = state.creditSize ?? 22;
+  const nameFontSize = Math.max(12, Math.round((baseDim * userScale) / 800));
+  const roleFontSize = Math.max(9, Math.round(nameFontSize * 0.65));
+  const lineSpacing = Math.round(roleFontSize * 0.55);
+
+  const fontStack = FONT_STACKS[state.creditFont ?? 'montserrat']?.family || FONT_STACKS.montserrat.family;
+  const color = state.creditColor || '#F4EFE6';
+  const opacity = Math.max(15, Math.min(100, state.creditOpacity ?? 85)) / 100;
+
+  ctx.save();
+  ctx.textBaseline = 'top';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+  ctx.shadowBlur = Math.max(2, Math.round(nameFontSize * 0.25));
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 1;
+
+  let x: number;
+  let textAlign: CanvasTextAlign;
+
+  if (align === 'left' || position === 'top-left' || position === 'bottom-left') {
+    textAlign = 'left';
+    x = area.x + margin;
+  } else if (align === 'right' || position === 'bottom-right') {
+    textAlign = 'right';
+    x = area.x + area.width - margin;
+  } else {
+    textAlign = 'center';
+    x = area.x + area.width / 2;
+  }
+  ctx.textAlign = textAlign;
+
+  const totalHeight = (role ? roleFontSize + lineSpacing : 0) + (name ? nameFontSize : 0);
+  let currentY: number;
+
+  if (position.startsWith('top')) {
+    currentY = area.y + margin;
+  } else {
+    currentY = area.y + area.height - margin - totalHeight;
+  }
+
+  // 1. Línea secundaria o encabezado (Rol en mayúsculas sobrias)
+  if (role) {
+    ctx.font = `600 ${roleFontSize}px ${fontStack}`;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = opacity * 0.85;
+    ctx.fillText(role.toUpperCase(), x, currentY);
+    currentY += roleFontSize + lineSpacing;
+  }
+
+  // 2. Línea principal (Nombre / Título de crédito)
+  if (name) {
+    ctx.font = `500 ${nameFontSize}px ${fontStack}`;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = opacity;
+    ctx.fillText(name, x, currentY);
   }
 
   ctx.restore();

@@ -85,6 +85,35 @@ const INITIAL_STATE: EditorState = {
   preset: 'FILM_35MM',
   presetIntensity: 100,
   ...CINEMATIC_PRESETS.FILM_35MM.values,
+
+  // --- Marcas de tiempo cinematográficas ---
+  timestampEnabled: false,
+  timestampText: 'OCT. 1998',
+  timestampPreset: 'analog-date',
+  timestampPosition: 'bottom-right',
+  timestampSize: 20,
+  timestampColor: '#F97316',
+  timestampOpacity: 85,
+  timestampFont: 'mono',
+
+  // --- Créditos cinematográficos ---
+  creditEnabled: false,
+  creditRole: 'A FILM BY',
+  creditName: 'DIRECTOR NAME',
+  creditPreset: 'film-by',
+  creditPosition: 'bottom-center',
+  creditAlign: 'center',
+  creditSize: 22,
+  creditColor: '#F4EFE6',
+  creditOpacity: 85,
+  creditFont: 'montserrat',
+
+  // --- Bordes de película analógica ---
+  borderEnabled: false,
+  borderStyle: 'none',
+  borderWidth: 4,
+  borderColor: '#0A0A0C',
+  borderOpacity: 100,
 };
 
 export default function Home() {
@@ -108,6 +137,11 @@ export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
+
+  // --- NUEVA IMAGEN STATE & REFS ---
+  const newImageInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [imageLoadError, setImageLoadError] = useState<string | null>(null);
 
   // --- REAL VISIBLE VIEWPORT TRACKING FOR IOS SAFARI ---
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
@@ -332,11 +366,16 @@ export default function Home() {
     []
   );
 
-  const handleImageLoaded = async (file: File) => {
+  const processNewImageFile = async (file: File) => {
+    setImageLoadError(null);
     try {
       const img = await loadImage(file);
       setPast([]);
       setFuture([]);
+      setIsComparing(false);
+      setExportPreview(null);
+      setShowConfirmModal(false);
+      setPendingFile(null);
       setState({
         ...INITIAL_STATE,
         image: img,
@@ -352,7 +391,42 @@ export default function Home() {
       });
     } catch (error) {
       console.error('Error loading image', error);
-      alert('No se pudo cargar la imagen.');
+      setImageLoadError('No se pudo procesar la imagen seleccionada. Se conserva la fotografía actual.');
+      setShowConfirmModal(false);
+      setPendingFile(null);
+    }
+  };
+
+  const handleImageLoaded = async (file: File) => {
+    await processNewImageFile(file);
+  };
+
+  const handleNewImageButtonClick = () => {
+    newImageInputRef.current?.click();
+  };
+
+  const handleNewImageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    // Verificar si existen cambios realizados que podrían perderse
+    const hasModifications =
+      past.length > 0 ||
+      state.preset !== 'FILM_35MM' ||
+      state.text !== INITIAL_STATE.text ||
+      (state.zoom ?? 1) !== 1 ||
+      (state.positionX ?? 0) !== 0 ||
+      (state.positionY ?? 0) !== 0 ||
+      state.borderEnabled ||
+      state.timestampEnabled ||
+      state.creditEnabled;
+
+    if (hasModifications) {
+      setPendingFile(file);
+      setShowConfirmModal(true);
+    } else {
+      processNewImageFile(file);
     }
   };
 
@@ -377,7 +451,13 @@ export default function Home() {
       updates.textBackgroundOpacity !== undefined ||
       updates.textBackgroundRadius !== undefined ||
       updates.textBackgroundPaddingX !== undefined ||
-      updates.textBackgroundPaddingY !== undefined
+      updates.textBackgroundPaddingY !== undefined ||
+      updates.timestampSize !== undefined ||
+      updates.timestampOpacity !== undefined ||
+      updates.creditSize !== undefined ||
+      updates.creditOpacity !== undefined ||
+      updates.borderWidth !== undefined ||
+      updates.borderOpacity !== undefined
     );
     recordHistoryChange(isContinuous);
 
@@ -518,6 +598,8 @@ export default function Home() {
       textBackgroundPaddingX: 16,
       textBackgroundPaddingY: 8,
       template: undefined,
+      timestampEnabled: false,
+      creditEnabled: false,
     }));
   }, [recordHistoryChange]);
 
@@ -527,6 +609,8 @@ export default function Home() {
       ...prev,
       grain: 0,
       vignette: 0,
+      borderEnabled: false,
+      borderStyle: 'none',
     }));
   }, [recordHistoryChange]);
 
@@ -666,8 +750,12 @@ export default function Home() {
   }, []);
 
   const handleConfirmNewImage = () => {
-    setState(INITIAL_STATE);
-    setShowConfirmModal(false);
+    if (pendingFile) {
+      processNewImageFile(pendingFile);
+    } else {
+      newImageInputRef.current?.click();
+      setShowConfirmModal(false);
+    }
   };
 
   // Close modal on Escape key
@@ -900,13 +988,23 @@ export default function Home() {
               {/* Nueva Imagen */}
               <button
                 type="button"
-                onClick={() => setShowConfirmModal(true)}
-                className="h-8 sm:h-9 px-2.5 sm:px-3 text-xs font-medium text-[#9E9C96] hover:text-[#EAE8E2] hover:bg-[#18181D] border border-[#232328] rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                id="btn-nueva-imagen"
+                onClick={handleNewImageButtonClick}
+                className="h-8 sm:h-9 px-2 sm:px-3 text-xs font-medium text-[#9E9C96] hover:text-[#EAE8E2] hover:bg-[#18181D] border border-[#232328] rounded-md transition-colors flex items-center gap-1.5 cursor-pointer"
                 title="Cargar una nueva fotografía"
+                aria-label="Cargar nueva fotografía"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Nueva imagen</span>
+                <Plus className="w-3.5 h-3.5 text-[#D8C7A5]" />
+                <span className="text-[11px] sm:text-xs">Nueva imagen</span>
               </button>
+
+              <input
+                ref={newImageInputRef}
+                type="file"
+                className="hidden"
+                accept="image/jpeg,image/png,image/webp,image/avif,image/*"
+                onChange={handleNewImageInputChange}
+              />
 
               {/* Exportar JPG Principal */}
               <button
@@ -1207,16 +1305,21 @@ export default function Home() {
                 </div>
                 <div>
                   <h3 id="confirm-modal-title" className="text-base font-semibold text-[#EAE8E2]">
-                    ¿Cargar una nueva fotografía?
+                    {pendingFile ? '¿Reemplazar la fotografía actual?' : '¿Cargar una nueva fotografía?'}
                   </h3>
                   <p className="text-xs text-[#9E9C96] mt-0.5">
-                    Se perderán los ajustes de encuadre, color y texto actuales.
+                    {pendingFile 
+                      ? `Se cargará «${pendingFile.name}» y se restablecerán los ajustes de encuadre, color y texto.`
+                      : 'Se descartarán los ajustes de encuadre, color y texto actuales.'}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setShowConfirmModal(false)}
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  setPendingFile(null);
+                }}
                 className="text-[#686662] hover:text-[#EAE8E2] transition-colors p-1"
                 aria-label="Cerrar diálogo"
               >
@@ -1231,20 +1334,46 @@ export default function Home() {
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => setShowConfirmModal(false)}
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  setPendingFile(null);
+                }}
                 className="px-4 py-2 text-xs font-medium text-[#9E9C96] hover:text-[#EAE8E2] rounded-md transition-colors cursor-pointer"
               >
                 Continuar editando
               </button>
               <button
                 type="button"
+                id="btn-confirm-new-image"
                 onClick={handleConfirmNewImage}
-                className="px-4 py-2 bg-rose-900/80 hover:bg-rose-800 text-rose-100 text-xs font-semibold rounded-md border border-rose-700/50 transition-colors cursor-pointer"
+                className="px-4 py-2 bg-amber-600/90 hover:bg-amber-500 text-white text-xs font-semibold rounded-md border border-amber-500/40 transition-colors cursor-pointer"
               >
-                Nueva fotografía
+                {pendingFile ? 'Cargar nueva imagen' : 'Nueva fotografía'}
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* NOTIFICACIÓN DE ERROR DE CARGA DE IMAGEN */}
+      {imageLoadError && (
+        <div 
+          role="alert"
+          className="fixed bottom-6 right-6 z-50 max-w-sm bg-[#18181D] border border-rose-500/30 rounded-lg p-3.5 shadow-xl flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2"
+        >
+          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+          <div className="flex-1 text-xs text-[#EAE8E2]">
+            <p className="font-semibold text-rose-300">Error al cargar la imagen</p>
+            <p className="text-[#9E9C96] mt-0.5">{imageLoadError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setImageLoadError(null)}
+            className="text-[#686662] hover:text-[#EAE8E2] p-0.5"
+            aria-label="Cerrar notificación"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
